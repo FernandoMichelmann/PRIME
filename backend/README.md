@@ -40,6 +40,18 @@ python -m uvicorn app.main:app --reload --reload-dir app --reload-dir migrations
 
 O token expira em 30 minutos por padrão. Senhas devem ser armazenadas somente como hash Argon2id. As rotas não criam usuários ou empresas automaticamente; o provisionamento inicial controlado será uma etapa separada. Não existe recuperação de senha ou refresh token nesta fase.
 
+## Primeiro administrador (bootstrap)
+
+Após configurar `backend/.env`, instalar as dependências e aplicar `python -m alembic upgrade head`, execute a partir da pasta `backend`:
+
+```bash
+python -m app.scripts.bootstrap_admin
+```
+
+O script solicita os dados interativamente, exige senha com pelo menos 12 caracteres, pede confirmação explícita e cria empresa, usuário, papel e permissões dentro de uma única transação. Ele aborta se já houver qualquer usuário e não expõe cadastro administrativo pela API. Execute apenas em uma sessão confiável com acesso ao banco correto. A senha não deve ser compartilhada nem colocada em comandos, arquivos ou Git.
+
+Depois, inicie a API e abra `http://127.0.0.1:8000/docs`. Teste `POST /api/v1/auth/login` usando o e-mail e senha cadastrados; copie o token para testar `GET /api/v1/auth/me` com Bearer token. O script ainda não torna os módulos de negócio operacionais; os endpoints devem ser conectados à autorização por empresa antes de disponibilizar dados.
+
 ## Migrações
 
 Revise a migração antes de aplicar. Em ambiente local, com o banco correto selecionado:
