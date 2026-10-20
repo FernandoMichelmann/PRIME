@@ -3223,3 +3223,12 @@ tbody tr:hover {
     .vehicle-trip-status-finalized,
     .vehicle-trip-status-open { white-space: normal; }
 }
+
+
+/* Cadastro e despesas de manutenção dos veículos */
+.vehicle-maintenance-form-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+.vehicle-invoice-due-field[hidden] { display:none !important; }
+.vehicle-maintenance-form-grid .form-field { min-width:0; }
+.vehicle-maintenance-form-grid input,.vehicle-maintenance-form-grid select { width:100%; }
+@media (max-width:800px) { .vehicle-maintenance-form-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:560px) { .vehicle-maintenance-form-grid { grid-template-columns:1fr; } }
