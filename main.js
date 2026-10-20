@@ -323,7 +323,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const expenseCount =
             monthlyTransactions.filter((item) => item.type === "expense").length +
             getInstallments().filter((item) => monthKey(item.date) === currentMonth()).length +
-            getVehicleCostOccurrences(currentMonth()).length;
+            getVehicleCostOccurrences(currentMonth()).length +
+            (window.PRIMEPayroll && window.PRIMEPayroll.getCompetencyCost(currentMonth()) > 0 ? 1 : 0);
 
         const balanceStatus = $(".kpi-card:nth-child(1) .kpi-bottom");
         const revenueStatus = $(".kpi-card:nth-child(2) .kpi-bottom");
@@ -3457,6 +3458,14 @@ document.addEventListener("DOMContentLoaded", () => {
     $("#refreshTransactions")?.addEventListener("click", () => {
         updateDashboard();
         showToast("Indicadores atualizados.");
+    });
+
+    // --------------------------------------------------
+    // INTEGRAÇÃO REATIVA DA FOLHA COM O DASHBOARD
+    // --------------------------------------------------
+
+    window.addEventListener("prime:payroll-updated", () => {
+        updateDashboard();
     });
 
     // --------------------------------------------------
