@@ -45,7 +45,7 @@
     list.innerHTML = companies.map(c => `<article class="developer-company-card">
       <div class="developer-company-card-head"><div><strong>${escapeHTML(c.trade_name || c.legal_name)}</strong><small>${escapeHTML(c.legal_name)}<br>Identificador: ${escapeHTML(c.slug)}${c.cnpj ? "<br>CNPJ: " + escapeHTML(c.cnpj) : ""}</small></div>
       <span class="company-status ${c.is_active ? "active" : "inactive"}">${c.is_active ? "Ativa" : "Inativa"}</span></div>
-      <div class="developer-company-actions"><button class="button-secondary" data-toggle-company="${c.id}" data-active="${c.is_active}">${c.is_active ? "Desativar empresa" : "Reativar empresa"}</button></div>
+      <div class="developer-company-actions"><button class="button-secondary" data-create-admin="${c.id}" data-company-name="${escapeHTML(c.trade_name || c.legal_name)}">Criar administrador</button><button class="button-secondary" data-toggle-company="${c.id}" data-active="${c.is_active}">${c.is_active ? "Desativar empresa" : "Reativar empresa"}</button></div>
     </article>`).join("");
     list.querySelectorAll("[data-create-admin]").forEach(btn => btn.addEventListener("click", () => {
       selectedCompanyId = btn.dataset.createAdmin;
