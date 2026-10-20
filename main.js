@@ -771,6 +771,76 @@ document.addEventListener("DOMContentLoaded", () => {
         refreshIcons();
     }
 
+    function renderVehicleOptions() {
+        if (!expensesPage) return;
+
+        expensesPage.innerHTML = `
+            <div class="expenses-page-header">
+                <div class="eyebrow">GESTÃO FINANCEIRA / VEÍCULOS</div>
+                <h1>Veículos<span class="blue-period">.</span></h1>
+                <p>Selecione o tipo de despesa que deseja consultar ou organizar.</p>
+
+                <button type="button" class="button-secondary"
+                    data-expense-action="back" style="margin-top:16px">
+                    <i data-lucide="arrow-left"></i> Voltar para Despesas
+                </button>
+            </div>
+
+            <div class="expenses-options">
+                <button type="button" class="expenses-option" data-expense-section="despesa-viagem">
+                    <span class="expenses-option-icon"><i data-lucide="route"></i></span>
+                    <span class="expenses-option-copy">
+                        <strong>Despesa de viagem</strong>
+                        <span>Combustível, diárias, descargas e demais custos relacionados às viagens.</span>
+                    </span>
+                    <i data-lucide="arrow-up-right" class="expenses-option-arrow"></i>
+                </button>
+
+                <button type="button" class="expenses-option" data-expense-section="despesa-manutencao">
+                    <span class="expenses-option-icon"><i data-lucide="wrench"></i></span>
+                    <span class="expenses-option-copy">
+                        <strong>Despesa manutenção</strong>
+                        <span>Manutenções preventivas, corretivas, peças, serviços e reparos dos veículos.</span>
+                    </span>
+                    <i data-lucide="arrow-up-right" class="expenses-option-arrow"></i>
+                </button>
+            </div>
+        `;
+
+        bindExpenseButtons();
+        refreshIcons();
+    }
+
+    function renderVehicleExpenseCategory(title, description, icon) {
+        if (!expensesPage) return;
+
+        expensesPage.innerHTML = `
+            <div class="expenses-page-header">
+                <div class="eyebrow">GESTÃO FINANCEIRA / VEÍCULOS</div>
+                <h1>${title}<span class="blue-period">.</span></h1>
+                <p>${description}</p>
+
+                <button type="button" class="button-secondary"
+                    data-expense-action="back-vehicles" style="margin-top:16px">
+                    <i data-lucide="arrow-left"></i> Voltar para Veículos
+                </button>
+            </div>
+
+            <div class="expenses-options">
+                <div class="expenses-option" role="status" style="cursor:default">
+                    <span class="expenses-option-icon"><i data-lucide="${icon}"></i></span>
+                    <span class="expenses-option-copy">
+                        <strong>Módulo em preparação</strong>
+                        <span>A navegação está pronta. O formulário de lançamento, a listagem e os relatórios desta categoria serão implementados na próxima etapa.</span>
+                    </span>
+                </div>
+            </div>
+        `;
+
+        bindExpenseButtons();
+        refreshIcons();
+    }
+
     function bindExpenseButtons() {
         if (!expensesPage) return;
 
@@ -786,6 +856,18 @@ document.addEventListener("DOMContentLoaded", () => {
 
                 if ($("#currentPage")) {
                     $("#currentPage").textContent = "Despesas";
+                }
+
+                window.scrollTo({ top: 0, behavior: "smooth" });
+            });
+        });
+
+        expensesPage.querySelectorAll('[data-expense-action="back-vehicles"]').forEach((button) => {
+            button.addEventListener("click", () => {
+                renderVehicleOptions();
+
+                if ($("#currentPage")) {
+                    $("#currentPage").textContent = "Veículos";
                 }
 
                 window.scrollTo({ top: 0, behavior: "smooth" });
@@ -816,10 +898,37 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
-        if (section === "veiculos" || section === "folha") {
-            showToast(
-                `A área "${section === "veiculos" ? "Veículos" : "Folha"}" será implementada em uma próxima etapa.`
+        if (section === "veiculos") {
+            renderVehicleOptions();
+
+            if ($("#currentPage")) {
+                $("#currentPage").textContent = "Veículos";
+            }
+
+            window.scrollTo({ top: 0, behavior: "smooth" });
+            return;
+        }
+
+        if (section === "despesa-viagem") {
+            renderVehicleExpenseCategory(
+                "Despesa de viagem",
+                "Controle de custos de viagem, como combustível, diárias, descargas e outras despesas da rota.",
+                "route"
             );
+            return;
+        }
+
+        if (section === "despesa-manutencao") {
+            renderVehicleExpenseCategory(
+                "Despesa manutenção",
+                "Área destinada ao registro e acompanhamento dos custos de manutenção dos veículos.",
+                "wrench"
+            );
+            return;
+        }
+
+        if (section === "folha") {
+            showToast('A área "Folha" será implementada em uma próxima etapa.');
         }
     }
 
