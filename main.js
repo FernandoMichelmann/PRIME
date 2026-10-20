@@ -35,6 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let cashflowChart;
     let expensesChart;
     let expensesPage = null;
+    let usersPage = null;
     let expenseFormDraft = null;
     let variableExpenseFilter = "all";
     const VEHICLE_TRIPS_STORAGE_KEY = "primeVehicleTripsV1";
@@ -746,6 +747,10 @@ document.addEventListener("DOMContentLoaded", () => {
     function restoreDashboardContent() {
         if (expensesPage) {
             expensesPage.hidden = true;
+        }
+
+        if (usersPage) {
+            usersPage.hidden = true;
         }
 
         originalContent.forEach((element) => {
@@ -1651,6 +1656,41 @@ document.addEventListener("DOMContentLoaded", () => {
 
         renderExpensesHome();
         return expensesPage;
+    }
+
+    function createUsersPage() {
+        if (usersPage) return usersPage;
+
+        usersPage = document.createElement("section");
+        usersPage.className = "users-page-shell";
+        usersPage.setAttribute("aria-label", "Cadastro de usuários e permissões");
+        usersPage.hidden = true;
+        content.appendChild(usersPage);
+        return usersPage;
+    }
+
+    function showUsersPage() {
+        if (!content || !window.PRIMEUsers) {
+            showToast("O módulo de usuários não foi carregado. Atualize a página e tente novamente.");
+            return;
+        }
+
+        originalContent.forEach((element) => {
+            element.hidden = true;
+        });
+
+        if (expensesPage) expensesPage.hidden = true;
+
+        const page = createUsersPage();
+        window.PRIMEUsers.render(page);
+        page.hidden = false;
+
+        if ($("#currentPage")) {
+            $("#currentPage").textContent = "Usuários e permissões";
+        }
+
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        refreshIcons();
     }
 
     function showExpensesPage() {
@@ -3241,6 +3281,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
 
+            if (pageName === "Cadastros") {
+                showUsersPage();
+                return;
+            }
+
             restoreDashboardContent();
 
             if ($("#currentPage")) {
@@ -3294,6 +3339,26 @@ document.addEventListener("DOMContentLoaded", () => {
                 showToast(`O módulo "${pageName}" será implementado na próxima etapa.`);
             });
         });
+
+    // --------------------------------------------------
+    // ACESSO AO CADASTRO PELO PERFIL DO CABEÇALHO
+    // --------------------------------------------------
+
+    const profileButton = $("#profileButton");
+
+    function openUserManagementFromProfile() {
+        setActiveNavigation("Cadastros");
+        closeSidebar();
+        showUsersPage();
+    }
+
+    profileButton?.addEventListener("click", openUserManagementFromProfile);
+    profileButton?.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openUserManagementFromProfile();
+        }
+    });
 
     // --------------------------------------------------
     // MENU RESPONSIVO
