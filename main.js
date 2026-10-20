@@ -36,6 +36,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let expensesChart;
     let expensesPage = null;
     let expenseFormDraft = null;
+    let variableExpenseFilter = "all";
 
     const transactions = [];
 
@@ -870,9 +871,27 @@ document.addEventListener("DOMContentLoaded", () => {
             .filter((item) => !item.paid)
             .reduce((sum, item) => sum + Number(item.amount || 0), 0);
 
-        const sortedExpenses = [...variableExpenses].sort((a, b) =>
-            (a.name || "").localeCompare(b.name || "", "pt-BR")
-        );
+        const statusCounts = {
+            all: variableExpenses.length,
+            pending: variableExpenses.filter((expense) =>
+                getExpenseStatus(expense.installments || []).key === "pending"
+            ).length,
+            paid: variableExpenses.filter((expense) =>
+                getExpenseStatus(expense.installments || []).key === "paid"
+            ).length,
+            overdue: variableExpenses.filter((expense) =>
+                getExpenseStatus(expense.installments || []).key === "overdue"
+            ).length
+        };
+
+        const sortedExpenses = [...variableExpenses]
+            .filter((expense) => {
+                if (variableExpenseFilter === "all") return true;
+                return getExpenseStatus(expense.installments || []).key === variableExpenseFilter;
+            })
+            .sort((a, b) =>
+                (a.name || "").localeCompare(b.name || "", "pt-BR")
+            );
 
         expensesPage.innerHTML = `
             <div class="expenses-page-header">
@@ -911,16 +930,46 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="variable-expenses-panel-heading">
                     <div>
                         <h2>Despesas cadastradas</h2>
-                        <p>Abra uma despesa para consultar as parcelas e os vencimentos.</p>
+                        <p>Filtre por situação ou abra uma despesa para consultar as parcelas.</p>
                     </div>
                     <span class="variable-expenses-count">
-                        ${variableExpenses.length} registro(s)
+                        ${sortedExpenses.length} de ${variableExpenses.length} registro(s)
                     </span>
+                </div>
+
+                <div class="expense-status-filters" role="group" aria-label="Filtrar despesas por status">
+                    <button type="button" class="expense-filter-button ${variableExpenseFilter === "all" ? "active" : ""}"
+                        data-expense-filter="all" aria-pressed="${variableExpenseFilter === "all"}">
+                        Todas <span>${statusCounts.all}</span>
+                    </button>
+                    <button type="button" class="expense-filter-button ${variableExpenseFilter === "pending" ? "active" : ""}"
+                        data-expense-filter="pending" aria-pressed="${variableExpenseFilter === "pending"}">
+                        <i data-lucide="clock-3"></i> Pendentes <span>${statusCounts.pending}</span>
+                    </button>
+                    <button type="button" class="expense-filter-button ${variableExpenseFilter === "paid" ? "active" : ""}"
+                        data-expense-filter="paid" aria-pressed="${variableExpenseFilter === "paid"}">
+                        <i data-lucide="check-circle-2"></i> Pagas <span>${statusCounts.paid}</span>
+                    </button>
+                    <button type="button" class="expense-filter-button ${variableExpenseFilter === "overdue" ? "active" : ""}"
+                        data-expense-filter="overdue" aria-pressed="${variableExpenseFilter === "overdue"}">
+                        <i data-lucide="alert-circle"></i> Vencidas <span>${statusCounts.overdue}</span>
+                    </button>
                 </div>
 
                 ${sortedExpenses.length ? `
                     <div class="variable-expense-list">
                         ${sortedExpenses.map((expense) => renderExpenseCard(expense)).join("")}
+                    </div>
+                ` : variableExpenses.length ? `
+                    <div class="variable-expenses-empty variable-expenses-filter-empty">
+                        <span class="variable-empty-icon">
+                            <i data-lucide="filter-x"></i>
+                        </span>
+                        <h3>Nenhuma despesa nesta situação</h3>
+                        <p>Não há despesas que correspondam ao filtro selecionado.</p>
+                        <button type="button" class="button-secondary" data-expense-filter="all">
+                            Mostrar todas as despesas
+                        </button>
                     </div>
                 ` : `
                     <div class="variable-expenses-empty">
@@ -1164,6 +1213,13 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function bindVariableExpensePage() {
         if (!expensesPage) return;
+
+        expensesPage.querySelectorAll("[data-expense-filter]").forEach((button) => {
+            button.addEventListener("click", () => {
+                variableExpenseFilter = button.dataset.expenseFilter || "all";
+                renderVariableExpensesPage();
+            });
+        });
 
         expensesPage.querySelectorAll("[data-expense-action]").forEach((button) => {
             button.addEventListener("click", () => {
