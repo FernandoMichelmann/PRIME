@@ -883,7 +883,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 
     // --------------------------------------------------
-    // CADASTRO DE VEÍCULOS E DESPESAS DE MANUTENÇÃO
+    // CADASTRO E GESTÃO DA FROTA
     // --------------------------------------------------
     function getVehicleTripStats(vehicle) {
         const plate = String(vehicle.plate || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -895,8 +895,9 @@ document.addEventListener("DOMContentLoaded", () => {
         return {trips:trips.length,totalKm,averageKm:kms.length?totalKm/kms.length:0,averageCostPerKm:totalKm?cost/totalKm:0,averageRevenuePerKm:totalKm?revenue/totalKm:0};
     }
 
-    function renderVehicleMaintenancePage(vehicleId = null, showVehicleForm = false, showCostForm = false) {
+    function renderVehicleMaintenancePage(vehicleId = null, showVehicleForm = false, showCostForm = false, editingVehicleId = null) {
         if (!expensesPage) return;
+        const editingVehicle = editingVehicleId ? registeredVehicles.find(v => String(v.id) === String(editingVehicleId)) : null;
         const vehicle = vehicleId ? registeredVehicles.find(v => String(v.id) === String(vehicleId)) : null;
         const types = ["Carro","Fiorino","Van","3/4","Truck","Cavalo","Carreta"];
         const fuels = ["Diesel","Gasolina","Etanol","Flex","GNV","Elétrico","Outro"];
@@ -904,7 +905,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const stats = getVehicleTripStats(vehicle);
             const costs = [...(vehicle.costs||[])].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
             expensesPage.innerHTML = `
-              <div class="expenses-page-header"><div class="eyebrow">GESTÃO FINANCEIRA / VEÍCULOS / MANUTENÇÃO</div><h1>${escapeHTML(vehicle.plate)}<span class="blue-period">.</span></h1><p>Quilometragem, médias operacionais e histórico de despesas.</p><div class="vehicle-trips-toolbar"><button class="button-secondary" data-expense-action="back-maintenance" type="button"><i data-lucide="arrow-left"></i> Voltar para veículos</button><button class="button-primary" data-vehicle-action="add-cost" type="button"><i data-lucide="plus"></i> Add custo do veículo</button></div></div>
+              <div class="expenses-page-header"><div class="eyebrow">GESTÃO FINANCEIRA / FROTA</div><h1>${escapeHTML(vehicle.plate)}<span class="blue-period">.</span></h1><p>Quilometragem, médias operacionais e histórico de despesas.</p><div class="vehicle-trips-toolbar"><button class="button-secondary" data-expense-action="back-maintenance" type="button"><i data-lucide="arrow-left"></i> Voltar para frota</button><button class="button-secondary" data-vehicle-action="edit-vehicle" type="button"><i data-lucide="pencil"></i> Alterar dados</button><button class="button-secondary" data-vehicle-action="delete-vehicle" type="button"><i data-lucide="trash-2"></i> Excluir veículo</button><button class="button-primary" data-vehicle-action="add-cost" type="button"><i data-lucide="plus"></i> Add custo do veículo</button></div></div>
               <section class="vehicle-trip-details-panel"><div class="vehicle-trip-details-heading"><div><span class="vehicle-trip-detail-kicker">DADOS DO VEÍCULO</span><h2>${escapeHTML(vehicle.type)} • ${escapeHTML(vehicle.year)}</h2><p>Placa: ${escapeHTML(vehicle.plate)} <span>•</span> Combustível: ${escapeHTML(vehicle.fuelType)}</p></div><span class="vehicle-trip-details-file"><i data-lucide="gauge"></i> KM atual: ${Number(vehicle.currentKm||0).toLocaleString("pt-BR")}</span></div>
               <div class="vehicle-trip-metrics">
                 <article class="vehicle-trip-metric"><span>VIAGENS FINALIZADAS</span><strong>${stats.trips}</strong></article>
@@ -926,6 +927,8 @@ document.addEventListener("DOMContentLoaded", () => {
               ${costs.length ? '<div class="vehicle-trip-cost-list">'+costs.map(c=>'<article class="vehicle-trip-cost-row"><div><strong>'+escapeHTML(c.category||"Despesa")+' — '+escapeHTML(c.description||"")+'</strong><span>'+dateLabel(c.date)+' • '+(c.paymentMethod==="card"?"Cartão • "+(c.installmentsCount||1)+"x • 1ª fatura "+dateLabel(c.invoiceDueDate||c.date):"À vista")+'</span></div><strong>'+money(c.amount)+'</strong><button type="button" class="button-secondary" data-vehicle-cost-delete="'+escapeHTML(c.id)+'" aria-label="Excluir despesa"><i data-lucide="trash-2"></i></button></article>').join("")+'</div>':'<p class="vehicle-trip-no-data">Nenhuma despesa cadastrada para este veículo.</p>'}</section></section>`;
             bindExpenseButtons();
             expensesPage.querySelector('[data-expense-action="back-maintenance"]')?.addEventListener("click",()=>renderVehicleMaintenancePage());
+            expensesPage.querySelector('[data-vehicle-action="edit-vehicle"]')?.addEventListener("click",()=>renderVehicleMaintenancePage(null,true,false,vehicle.id));
+            expensesPage.querySelector('[data-vehicle-action="delete-vehicle"]')?.addEventListener("click",()=>{ if(!window.confirm(`Excluir o veículo ${vehicle.plate}? As despesas cadastradas nele também serão removidas. O histórico das viagens já registradas será mantido.`)) return; const old=registeredVehicles; registeredVehicles=old.filter(v=>String(v.id)!==String(vehicle.id)); if(!persistRegisteredVehicles()){registeredVehicles=old;return;} updateDashboard(); showToast("Veículo excluído da frota."); renderVehicleMaintenancePage(); });
             expensesPage.querySelector('[data-vehicle-action="add-cost"]')?.addEventListener("click",()=>renderVehicleMaintenancePage(vehicle.id,false,true));
             expensesPage.querySelector('[data-vehicle-action="cancel-cost"]')?.addEventListener("click",()=>renderVehicleMaintenancePage(vehicle.id));
             const form=$("#vehicleMaintenanceCostForm",expensesPage);
@@ -952,7 +955,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         const list=[...registeredVehicles].sort((a,b)=>String(a.plate||"").localeCompare(String(b.plate||"")));
         expensesPage.innerHTML=`
-          <div class="expenses-page-header"><div class="eyebrow">GESTÃO FINANCEIRA / VEÍCULOS / MANUTENÇÃO</div><h1>Despesas de manutenção<span class="blue-period">.</span></h1><p>Cadastre os veículos, acompanhe o KM e controle os custos de cada um.</p><div class="vehicle-trips-toolbar"><button type="button" class="button-secondary" data-expense-action="back-vehicles"><i data-lucide="arrow-left"></i> Voltar para Veículos</button><button type="button" class="button-primary" data-vehicle-action="new"><i data-lucide="plus"></i> Cadastrar veículo</button></div></div>
+          <div class="expenses-page-header"><div class="eyebrow">GESTÃO FINANCEIRA / FROTA</div><h1>FROTA<span class="blue-period">.</span></h1><p>Cadastre os veículos, acompanhe o KM e controle os custos de cada um.</p><div class="vehicle-trips-toolbar"><button type="button" class="button-secondary" data-expense-action="back-vehicles"><i data-lucide="arrow-left"></i> Voltar para Veículos</button><button type="button" class="button-primary" data-vehicle-action="new"><i data-lucide="plus"></i> Cadastrar veículo</button></div></div>
           ${showVehicleForm?`<section class="vehicle-trip-form-panel"><div class="vehicle-trip-panel-heading"><div><h2>Novo veículo</h2><p>Informe os dados básicos para acompanhar viagens e despesas.</p></div></div><form id="registeredVehicleForm" class="vehicle-trip-form">
             <label class="form-field">Placa<input name="plate" maxlength="8" placeholder="ABC1D23" required autocomplete="off"></label>
             <label class="form-field">Ano<input name="year" type="number" min="1950" max="2100" required placeholder="2022"></label>
@@ -965,7 +968,7 @@ document.addEventListener("DOMContentLoaded", () => {
           ${list.length?'<div class="vehicle-trips-list">'+list.map(v=>{const s=getVehicleTripStats(v);return '<article class="vehicle-trip-card"><div class="vehicle-trip-card-icon"><i data-lucide="truck"></i></div><div class="vehicle-trip-card-main"><strong>'+escapeHTML(v.plate)+' • '+escapeHTML(v.type)+'</strong><span>Ano: '+escapeHTML(v.year)+' • '+escapeHTML(v.fuelType)+'</span><span>KM atual: '+Number(v.currentKm||0).toLocaleString("pt-BR")+'</span><span>'+s.trips+' viagem(ns) finalizada(s) • média '+(s.averageKm?Math.round(s.averageKm).toLocaleString("pt-BR")+" km/viagem":"sem média ainda")+'</span></div><button type="button" class="button-secondary vehicle-trip-view-button" data-vehicle-view="'+escapeHTML(v.id)+'"><i data-lucide="eye"></i> VER</button></article>';}).join("")+'</div>':'<div class="vehicle-trips-empty"><span class="vehicle-trips-empty-icon"><i data-lucide="truck"></i></span><strong>Nenhum veículo cadastrado</strong><p>Clique em “Cadastrar veículo” para incluir o primeiro veículo da frota.</p></div>'}</section>`;
         bindExpenseButtons();
         expensesPage.querySelector('[data-vehicle-action="new"]')?.addEventListener("click",()=>renderVehicleMaintenancePage(null,true));
-        expensesPage.querySelector('[data-vehicle-action="cancel-new"]')?.addEventListener("click",()=>renderVehicleMaintenancePage());
+        expensesPage.querySelector('[data-vehicle-action="cancel-new"]')?.addEventListener("click",()=>editingVehicle?renderVehicleMaintenancePage(editingVehicle.id):renderVehicleMaintenancePage());
         expensesPage.querySelectorAll("[data-vehicle-view]").forEach(button=>button.addEventListener("click",()=>renderVehicleMaintenancePage(button.dataset.vehicleView)));
         const form=$("#registeredVehicleForm",expensesPage), plateInput=form?.elements.plate;
         plateInput?.addEventListener("input",()=>{plateInput.value=plateInput.value.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,7);});
@@ -1619,7 +1622,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (section === "despesa-manutencao") {
             renderVehicleMaintenancePage();
-            if ($("#currentPage")) $("#currentPage").textContent = "Despesas de manutenção";
+            if ($("#currentPage")) $("#currentPage").textContent = "FROTA";
             window.scrollTo({ top: 0, behavior: "smooth" });
             return;
         }
