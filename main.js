@@ -38,7 +38,9 @@ document.addEventListener("DOMContentLoaded", () => {
     let expenseFormDraft = null;
     let variableExpenseFilter = "all";
     const VEHICLE_TRIPS_STORAGE_KEY = "primeVehicleTripsV1";
+    const VEHICLES_STORAGE_KEY = "primeVehiclesV1";
     let vehicleTrips = loadVehicleTrips();
+    let registeredVehicles = loadRegisteredVehicles();
 
     const transactions = [];
 
@@ -126,6 +128,43 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     }
 
+    function loadRegisteredVehicles() {
+        try {
+            const value = JSON.parse(localStorage.getItem(VEHICLES_STORAGE_KEY) || "[]");
+            return Array.isArray(value) ? value : [];
+        } catch (error) { console.error("Erro ao carregar veículos:", error); return []; }
+    }
+
+    function persistRegisteredVehicles() {
+        try { localStorage.setItem(VEHICLES_STORAGE_KEY, JSON.stringify(registeredVehicles)); return true; }
+        catch (error) { console.error("Erro ao salvar veículos:", error); showToast("Não foi possível salvar os veículos."); return false; }
+    }
+
+    function getVehicleByPlate(plate) {
+        const key = String(plate || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+        return registeredVehicles.find((v) => String(v.plate || "").toUpperCase().replace(/[^A-Z0-9]/g, "") === key);
+    }
+
+    function getVehicleCostOccurrences(month = currentMonth()) {
+        return registeredVehicles.flatMap((vehicle) => (vehicle.costs || []).flatMap((cost) => {
+            const amount = Math.max(0, Number(cost.amount) || 0);
+            const count = cost.paymentMethod === "card" ? Math.max(1, Number(cost.installmentsCount) || 1) : 1;
+            const base = cost.paymentMethod === "card" ? (cost.invoiceDueDate || cost.date) : cost.date;
+            if (!base) return [];
+            if (count === 1) return monthKey(base) === month ? [{ ...cost, vehicleId: vehicle.id, vehiclePlate: vehicle.plate, occurrenceDate: base, occurrenceAmount: amount }] : [];
+            return Array.from({length:count}, (_,i) => {
+                const date = new Date(base + "T12:00:00");
+                date.setMonth(date.getMonth() + i);
+                const due = localISO(date);
+                return {...cost, vehicleId:vehicle.id, vehiclePlate:vehicle.plate, occurrenceDate:due, occurrenceAmount:amount/count, installmentNumber:i+1};
+            }).filter((item) => monthKey(item.occurrenceDate) === month);
+        }));
+    }
+
+    function getMonthlyVehicleMaintenanceTotal(month = currentMonth()) {
+        return getVehicleCostOccurrences(month).reduce((sum, item) => sum + item.occurrenceAmount, 0);
+    }
+
     function showToast(message) {
         const toast = $("#toast");
         if (!toast) return;
@@ -180,7 +219,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function getMonthlyExpenseTotal(month = currentMonth()) {
         const ordinaryExpenses = getMonthTransactions(month).filter((item) => item.type === "expense").reduce((sum, item) => sum + item.amount, 0);
         const registeredExpenses = getInstallments().filter((item) => monthKey(item.date) === month).reduce((sum, item) => sum + item.amount, 0);
-        return ordinaryExpenses + registeredExpenses + getFinalizedTripTotals(month).expense;
+        return ordinaryExpenses + registeredExpenses + getFinalizedTripTotals(month).expense + getMonthlyVehicleMaintenanceTotal(month);
     }
 
     function getMonthlyRevenueTotal(month = currentMonth()) {
@@ -226,10 +265,8 @@ document.addEventListener("DOMContentLoaded", () => {
             ...getMonthTransactions().filter((item) => item.type === "expense"),
             ...getInstallments()
                 .filter((item) => monthKey(item.date) === currentMonth())
-                .map((item) => ({
-                    amount: item.amount,
-                    category: item.category || "Outros"
-                }))
+                .map((item) => ({ amount: item.amount, category: item.category || "Outros" })),
+            ...getVehicleCostOccurrences(currentMonth()).map((item) => ({ amount: item.occurrenceAmount, category: "Manutenção" }))
         ];
 
         currentExpenses.forEach((expense) => {
@@ -282,9 +319,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const expenseCount =
             monthlyTransactions.filter((item) => item.type === "expense").length +
-            getInstallments().filter(
-                (item) => monthKey(item.date) === currentMonth()
-            ).length;
+            getInstallments().filter((item) => monthKey(item.date) === currentMonth()).length +
+            getVehicleCostOccurrences(currentMonth()).length;
 
         const balanceStatus = $(".kpi-card:nth-child(1) .kpi-bottom");
         const revenueStatus = $(".kpi-card:nth-child(2) .kpi-bottom");
@@ -845,6 +881,105 @@ document.addEventListener("DOMContentLoaded", () => {
         refreshIcons();
     }
 
+
+    // --------------------------------------------------
+    // CADASTRO DE VEÍCULOS E DESPESAS DE MANUTENÇÃO
+    // --------------------------------------------------
+    function getVehicleTripStats(vehicle) {
+        const plate = String(vehicle.plate || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+        const trips = vehicleTrips.filter(t => t.finalizedAt && String(t.plate || "").toUpperCase().replace(/[^A-Z0-9]/g, "") === plate);
+        const kms = trips.map(t => t.startKm !== null && t.startKm !== "" && t.returnKm !== null && t.returnKm !== "" ? Math.max(0, Number(t.returnKm) - Number(t.startKm)) : 0).filter(k => k > 0);
+        const totalKm = kms.reduce((s,k)=>s+k,0);
+        const cost = trips.reduce((s,t)=>s+Math.max(0,Number(t.vehiclePay)||0)+(t.extraCosts||[]).reduce((a,c)=>a+Math.max(0,Number(c.amount)||0),0),0);
+        const revenue = trips.reduce((s,t)=>s+Math.max(0,Number(t.manifestData?.totalFreight)||0),0);
+        return {trips:trips.length,totalKm,averageKm:kms.length?totalKm/kms.length:0,averageCostPerKm:totalKm?cost/totalKm:0,averageRevenuePerKm:totalKm?revenue/totalKm:0};
+    }
+
+    function renderVehicleMaintenancePage(vehicleId = null, showVehicleForm = false, showCostForm = false) {
+        if (!expensesPage) return;
+        const vehicle = vehicleId ? registeredVehicles.find(v => String(v.id) === String(vehicleId)) : null;
+        const types = ["Carro","Fiorino","Van","3/4","Truck","Cavalo","Carreta"];
+        const fuels = ["Diesel","Gasolina","Etanol","Flex","GNV","Elétrico","Outro"];
+        if (vehicle) {
+            const stats = getVehicleTripStats(vehicle);
+            const costs = [...(vehicle.costs||[])].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
+            expensesPage.innerHTML = `
+              <div class="expenses-page-header"><div class="eyebrow">GESTÃO FINANCEIRA / VEÍCULOS / MANUTENÇÃO</div><h1>${escapeHTML(vehicle.plate)}<span class="blue-period">.</span></h1><p>Quilometragem, médias operacionais e histórico de despesas.</p><div class="vehicle-trips-toolbar"><button class="button-secondary" data-expense-action="back-maintenance" type="button"><i data-lucide="arrow-left"></i> Voltar para veículos</button><button class="button-primary" data-vehicle-action="add-cost" type="button"><i data-lucide="plus"></i> Add custo do veículo</button></div></div>
+              <section class="vehicle-trip-details-panel"><div class="vehicle-trip-details-heading"><div><span class="vehicle-trip-detail-kicker">DADOS DO VEÍCULO</span><h2>${escapeHTML(vehicle.type)} • ${escapeHTML(vehicle.year)}</h2><p>Placa: ${escapeHTML(vehicle.plate)} <span>•</span> Combustível: ${escapeHTML(vehicle.fuelType)}</p></div><span class="vehicle-trip-details-file"><i data-lucide="gauge"></i> KM atual: ${Number(vehicle.currentKm||0).toLocaleString("pt-BR")}</span></div>
+              <div class="vehicle-trip-metrics">
+                <article class="vehicle-trip-metric"><span>VIAGENS FINALIZADAS</span><strong>${stats.trips}</strong></article>
+                <article class="vehicle-trip-metric"><span>KM RODADOS</span><strong>${stats.totalKm.toLocaleString("pt-BR")} km</strong></article>
+                <article class="vehicle-trip-metric"><span>MÉDIA KM / VIAGEM</span><strong>${stats.averageKm?Math.round(stats.averageKm).toLocaleString("pt-BR")+" km":"—"}</strong></article>
+                <article class="vehicle-trip-metric"><span>CUSTO MÉDIO / KM</span><strong>${stats.averageCostPerKm?money(stats.averageCostPerKm):"—"}</strong></article>
+                <article class="vehicle-trip-metric"><span>RECEITA MÉDIA / KM</span><strong>${stats.averageRevenuePerKm?money(stats.averageRevenuePerKm):"—"}</strong></article>
+              </div>
+              ${showCostForm ? `<form id="vehicleMaintenanceCostForm" class="vehicle-trip-extra-form"><h3>Cadastro de despesa do veículo</h3><div class="vehicle-maintenance-form-grid">
+                <label class="form-field">Tipo de despesa<select name="category" required><option>Manutenção</option><option>Troca de pneus</option><option>Óleo e lubrificantes</option><option>Peças</option><option>Documentos</option><option>Lavagem</option><option>Outro</option></select></label>
+                <label class="form-field">Descrição<input name="description" maxlength="160" required placeholder="Ex.: troca de dois pneus"></label>
+                <label class="form-field">Valor total (R$)<input name="amount" type="number" min="0.01" step="0.01" required placeholder="0,00"></label>
+                <label class="form-field">Data da despesa<input name="date" type="date" value="${todayISO}" required></label>
+                <label class="form-field">Forma de pagamento<select name="paymentMethod" required><option value="cash">À vista</option><option value="card">Cartão de crédito</option></select></label>
+                <label class="form-field">Quantidade de parcelas<select name="installmentsCount"><option value="1">1 parcela</option><option value="2">2 parcelas</option><option value="3">3 parcelas</option><option value="4">4 parcelas</option><option value="5">5 parcelas</option><option value="6">6 parcelas</option><option value="7">7 parcelas</option><option value="8">8 parcelas</option><option value="9">9 parcelas</option><option value="10">10 parcelas</option><option value="11">11 parcelas</option><option value="12">12 parcelas</option></select></label>
+                <label class="form-field vehicle-invoice-due-field" hidden>Vencimento da primeira fatura<input name="invoiceDueDate" type="date" value="${todayISO}"></label></div>
+                <p class="form-note">À vista: entra no mês da data da despesa. Cartão: o valor é dividido pelas parcelas a partir do vencimento da primeira fatura.</p><div class="vehicle-trip-form-actions"><button type="button" class="button-secondary" data-vehicle-action="cancel-cost">Cancelar</button><button type="submit" class="button-primary"><i data-lucide="save"></i> Salvar despesa</button></div></form>` : ""}
+              <section class="vehicle-trip-detail-section"><div class="vehicle-trip-table-heading"><div><h3><i data-lucide="receipt-text"></i> Histórico de despesas</h3><p>Manutenção, pneus, óleo, peças, documentos e outros custos.</p></div></div>
+              ${costs.length ? '<div class="vehicle-trip-cost-list">'+costs.map(c=>'<article class="vehicle-trip-cost-row"><div><strong>'+escapeHTML(c.category||"Despesa")+' — '+escapeHTML(c.description||"")+'</strong><span>'+dateLabel(c.date)+' • '+(c.paymentMethod==="card"?"Cartão • "+(c.installmentsCount||1)+"x • 1ª fatura "+dateLabel(c.invoiceDueDate||c.date):"À vista")+'</span></div><strong>'+money(c.amount)+'</strong><button type="button" class="button-secondary" data-vehicle-cost-delete="'+escapeHTML(c.id)+'" aria-label="Excluir despesa"><i data-lucide="trash-2"></i></button></article>').join("")+'</div>':'<p class="vehicle-trip-no-data">Nenhuma despesa cadastrada para este veículo.</p>'}</section></section>`;
+            bindExpenseButtons();
+            expensesPage.querySelector('[data-expense-action="back-maintenance"]')?.addEventListener("click",()=>renderVehicleMaintenancePage());
+            expensesPage.querySelector('[data-vehicle-action="add-cost"]')?.addEventListener("click",()=>renderVehicleMaintenancePage(vehicle.id,false,true));
+            expensesPage.querySelector('[data-vehicle-action="cancel-cost"]')?.addEventListener("click",()=>renderVehicleMaintenancePage(vehicle.id));
+            const form=$("#vehicleMaintenanceCostForm",expensesPage);
+            if(form){
+                const payment=form.elements.paymentMethod, count=form.elements.installmentsCount, due=$(".vehicle-invoice-due-field",form);
+                const sync=()=>{const card=payment.value==="card";due.hidden=!card;form.elements.invoiceDueDate.required=card;count.disabled=!card;if(!card)count.value="1";};
+                payment.addEventListener("change",sync);sync();
+                form.addEventListener("submit",event=>{
+                    event.preventDefault();const fd=new FormData(form), amount=Number(fd.get("amount")), method=String(fd.get("paymentMethod")), date=String(fd.get("date")||""), invoiceDueDate=method==="card"?String(fd.get("invoiceDueDate")||""):"", installmentsCount=method==="card"?Math.max(1,Number(fd.get("installmentsCount"))||1):1;
+                    if(!(amount>0)||!date||(method==="card"&&!invoiceDueDate)){showToast("Informe valor, data e vencimento da fatura para compras no cartão.");return;}
+                    const cost={id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`,category:String(fd.get("category")||"Manutenção"),description:String(fd.get("description")||"").trim(),amount,date,paymentMethod:method,installmentsCount,invoiceDueDate,createdAt:new Date().toISOString()};
+                    vehicle.costs=vehicle.costs||[];vehicle.costs.push(cost);
+                    if(!persistRegisteredVehicles()){vehicle.costs=vehicle.costs.filter(c=>c.id!==cost.id);return;}
+                    updateDashboard();showToast("Despesa cadastrada e dashboard atualizado.");renderVehicleMaintenancePage(vehicle.id);
+                });
+            }
+            expensesPage.querySelectorAll("[data-vehicle-cost-delete]").forEach(button=>button.addEventListener("click",()=>{
+                if(!window.confirm("Excluir esta despesa do veículo?"))return;
+                const old=vehicle.costs||[];vehicle.costs=old.filter(c=>String(c.id)!==String(button.dataset.vehicleCostDelete));
+                if(!persistRegisteredVehicles()){vehicle.costs=old;return;}
+                updateDashboard();showToast("Despesa excluída.");renderVehicleMaintenancePage(vehicle.id);
+            }));
+            refreshIcons();return;
+        }
+        const list=[...registeredVehicles].sort((a,b)=>String(a.plate||"").localeCompare(String(b.plate||"")));
+        expensesPage.innerHTML=`
+          <div class="expenses-page-header"><div class="eyebrow">GESTÃO FINANCEIRA / VEÍCULOS / MANUTENÇÃO</div><h1>Despesas de manutenção<span class="blue-period">.</span></h1><p>Cadastre os veículos, acompanhe o KM e controle os custos de cada um.</p><div class="vehicle-trips-toolbar"><button type="button" class="button-secondary" data-expense-action="back-vehicles"><i data-lucide="arrow-left"></i> Voltar para Veículos</button><button type="button" class="button-primary" data-vehicle-action="new"><i data-lucide="plus"></i> Cadastrar veículo</button></div></div>
+          ${showVehicleForm?`<section class="vehicle-trip-form-panel"><div class="vehicle-trip-panel-heading"><div><h2>Novo veículo</h2><p>Informe os dados básicos para acompanhar viagens e despesas.</p></div></div><form id="registeredVehicleForm" class="vehicle-trip-form">
+            <label class="form-field">Placa<input name="plate" maxlength="8" placeholder="ABC1D23" required autocomplete="off"></label>
+            <label class="form-field">Ano<input name="year" type="number" min="1950" max="2100" required placeholder="2022"></label>
+            <label class="form-field">Tipo de vínculo / veículo<select name="type" required><option value="">Selecione</option>${types.map(t=>'<option>'+t+'</option>').join("")}</select></label>
+            <label class="form-field">Tipo de combustível<select name="fuelType" required><option value="">Selecione</option>${fuels.map(t=>'<option>'+t+'</option>').join("")}</select></label>
+            <label class="form-field">KM atual<input name="currentKm" type="number" min="0" step="1" required placeholder="Ex.: 125000"></label>
+            <div class="vehicle-trip-form-actions"><button type="button" class="button-secondary" data-vehicle-action="cancel-new">Cancelar</button><button type="submit" class="button-primary"><i data-lucide="save"></i> Salvar veículo</button></div>
+          </form></section>`:""}
+          <section class="vehicle-trips-list-panel"><div class="vehicle-trip-panel-heading"><div><h2>Veículos cadastrados</h2><p>Selecione um veículo para consultar médias e registrar despesas.</p></div><span class="vehicle-trips-count">${list.length} veículo(s)</span></div>
+          ${list.length?'<div class="vehicle-trips-list">'+list.map(v=>{const s=getVehicleTripStats(v);return '<article class="vehicle-trip-card"><div class="vehicle-trip-card-icon"><i data-lucide="truck"></i></div><div class="vehicle-trip-card-main"><strong>'+escapeHTML(v.plate)+' • '+escapeHTML(v.type)+'</strong><span>Ano: '+escapeHTML(v.year)+' • '+escapeHTML(v.fuelType)+'</span><span>KM atual: '+Number(v.currentKm||0).toLocaleString("pt-BR")+'</span><span>'+s.trips+' viagem(ns) finalizada(s) • média '+(s.averageKm?Math.round(s.averageKm).toLocaleString("pt-BR")+" km/viagem":"sem média ainda")+'</span></div><button type="button" class="button-secondary vehicle-trip-view-button" data-vehicle-view="'+escapeHTML(v.id)+'"><i data-lucide="eye"></i> VER</button></article>';}).join("")+'</div>':'<div class="vehicle-trips-empty"><span class="vehicle-trips-empty-icon"><i data-lucide="truck"></i></span><strong>Nenhum veículo cadastrado</strong><p>Clique em “Cadastrar veículo” para incluir o primeiro veículo da frota.</p></div>'}</section>`;
+        bindExpenseButtons();
+        expensesPage.querySelector('[data-vehicle-action="new"]')?.addEventListener("click",()=>renderVehicleMaintenancePage(null,true));
+        expensesPage.querySelector('[data-vehicle-action="cancel-new"]')?.addEventListener("click",()=>renderVehicleMaintenancePage());
+        expensesPage.querySelectorAll("[data-vehicle-view]").forEach(button=>button.addEventListener("click",()=>renderVehicleMaintenancePage(button.dataset.vehicleView)));
+        const form=$("#registeredVehicleForm",expensesPage), plateInput=form?.elements.plate;
+        plateInput?.addEventListener("input",()=>{plateInput.value=plateInput.value.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,7);});
+        form?.addEventListener("submit",event=>{
+            event.preventDefault();const fd=new FormData(form), plate=String(fd.get("plate")||"").trim().toUpperCase(), year=Number(fd.get("year")), currentKm=Number(fd.get("currentKm"));
+            if(!plate||!year||!Number.isFinite(currentKm)||currentKm<0){showToast("Confira placa, ano e KM atual.");return;}
+            if(getVehicleByPlate(plate)){showToast("Já existe um veículo cadastrado com esta placa.");return;}
+            const item={id:`${Date.now()}-${Math.random().toString(36).slice(2,8)}`,plate,year,type:String(fd.get("type")||""),fuelType:String(fd.get("fuelType")||""),currentKm,costs:[],createdAt:new Date().toISOString()};
+            registeredVehicles.push(item);if(!persistRegisteredVehicles()){registeredVehicles=registeredVehicles.filter(v=>v.id!==item.id);return;}
+            showToast("Veículo cadastrado com sucesso.");renderVehicleMaintenancePage();
+        });
+        refreshIcons();
+    }
+
     function renderVehicleExpenseCategory(title, description, icon) {
         if (!expensesPage) return;
 
@@ -1048,10 +1183,25 @@ document.addEventListener("DOMContentLoaded", () => {
                     if (!(Number(selectedTrip.manifestData?.totalFreight) > 0)) { showToast("Informe um valor de frete válido no manifesto antes de finalizar."); return; }
                     if (!window.confirm("Finalizar esta viagem? Os valores serão contabilizados no dashboard e não poderão mais ser alterados.")) return;
                     const oldValue = selectedTrip.finalizedAt;
+                    const matchingVehicle = getVehicleByPlate(selectedTrip.plate);
+                    const previousKm = matchingVehicle ? matchingVehicle.currentKm : null;
                     selectedTrip.finalizedAt = new Date().toISOString();
-                    if (!persistVehicleTrips()) { selectedTrip.finalizedAt = oldValue; return; }
+                    if (matchingVehicle && selectedTrip.returnKm !== null && selectedTrip.returnKm !== undefined && selectedTrip.returnKm !== "" && Number.isFinite(Number(selectedTrip.returnKm)) && Number(selectedTrip.returnKm) >= 0) matchingVehicle.currentKm = Number(selectedTrip.returnKm);
+                    if (!persistVehicleTrips()) {
+                        selectedTrip.finalizedAt = oldValue;
+                        if (matchingVehicle && previousKm !== null) matchingVehicle.currentKm = previousKm;
+                        return;
+                    }
+                    if (matchingVehicle && !persistRegisteredVehicles()) {
+                        selectedTrip.finalizedAt = oldValue;
+                        if (previousKm !== null) matchingVehicle.currentKm = previousKm;
+                        persistVehicleTrips();
+                        return;
+                    }
                     updateDashboard();
-                    showToast("Viagem finalizada e contabilizada no dashboard.");
+                    showToast(matchingVehicle && selectedTrip.returnKm !== null && selectedTrip.returnKm !== undefined && selectedTrip.returnKm !== ""
+                        ? "Viagem finalizada. KM do veículo atualizado para " + Number(selectedTrip.returnKm).toLocaleString("pt-BR") + "."
+                        : "Viagem finalizada e contabilizada no dashboard.");
                     renderVehicleTripsPage(false, selectedTrip.id);
                 });
                 $("[data-trip-action='trip-report']", expensesPage)?.addEventListener("click", () => generateVehicleTripReport(selectedTrip));
@@ -1468,11 +1618,9 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (section === "despesa-manutencao") {
-            renderVehicleExpenseCategory(
-                "Despesa manutenção",
-                "Área destinada ao registro e acompanhamento dos custos de manutenção dos veículos.",
-                "wrench"
-            );
+            renderVehicleMaintenancePage();
+            if ($("#currentPage")) $("#currentPage").textContent = "Despesas de manutenção";
+            window.scrollTo({ top: 0, behavior: "smooth" });
             return;
         }
 
