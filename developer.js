@@ -3,7 +3,8 @@
   const API_BASE = "http://127.0.0.1:8000/api/v1";
   const $ = (s) => document.querySelector(s);
   let token = sessionStorage.getItem("primeDeveloperToken") || "";
-  let currentUser = null;\n  let selectedCompanyId = null;
+  let currentUser = null;
+  let selectedCompanyId = null;
   const escapeHTML = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   async function api(path, options = {}) {
     const response = await fetch(API_BASE + path, {
