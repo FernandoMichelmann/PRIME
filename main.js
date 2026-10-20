@@ -869,7 +869,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 <button type="button" class="expenses-option" data-expense-section="despesa-manutencao">
                     <span class="expenses-option-icon"><i data-lucide="wrench"></i></span>
                     <span class="expenses-option-copy">
-                        <strong>Despesa manutenção</strong>
+                        <strong>FROTA</strong>
                         <span>Manutenções preventivas, corretivas, peças, serviços e reparos dos veículos.</span>
                     </span>
                     <i data-lucide="arrow-up-right" class="expenses-option-arrow"></i>
