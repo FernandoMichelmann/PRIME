@@ -3222,7 +3222,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // EVENTOS DA NAVEGAÇÃO
     // --------------------------------------------------
 
-    $$$(".nav-item").forEach((item) => {
+    $$(".nav-item").forEach((item) => {
         item.addEventListener("click", (event) => {
             if (item.getAttribute("href") === "./developer.html") return;
             event.preventDefault();
