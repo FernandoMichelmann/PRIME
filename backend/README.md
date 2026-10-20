@@ -52,7 +52,7 @@ O script solicita os dados interativamente, exige senha com pelo menos 12 caract
 
 Depois, inicie a API e abra `http://127.0.0.1:8000/docs`. Teste `POST /api/v1/auth/login` usando o e-mail e senha cadastrados; copie o token para testar `GET /api/v1/auth/me` com Bearer token. O script ainda não torna os módulos de negócio operacionais; os endpoints devem ser conectados à autorização por empresa antes de disponibilizar dados.
 
-## Migrações
+## Área do Desenvolvedor\n\nA API inclui endpoints protegidos para listar, cadastrar e ativar/desativar transportadoras, além de criar administradores. Todas as rotas exigem JWT de uma conta com `is_platform_admin=true`; esconder a página no frontend não substitui essa validação. A página `developer.html` oferece a interface de login e gestão, configurada para API local `http://127.0.0.1:8000/api/v1`.\n\nPara conceder acesso de desenvolvedor a uma conta existente, crie primeiro a conta pela API/fluxo de cadastro aprovado e execute `python -m app.scripts.promote_platform_admin`. O script só promove uma conta ativa existente, pede confirmação e bloqueia a operação se já houver um administrador de plataforma. Não exponha esse script em endpoints HTTP.\n\n## Migrações
 
 Revise a migração antes de aplicar. Em ambiente local, com o banco correto selecionado:
 
