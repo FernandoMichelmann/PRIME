@@ -1,0 +1,12 @@
+# Migrações do banco
+
+As migrações Alembic são versionadas neste diretório. Os modelos devem ser importados para registrar o metadata antes de gerar revisões.
+
+Com o ambiente virtual ativo, na pasta `backend`:
+
+```bash
+alembic revision --autogenerate -m "descricao"
+alembic upgrade head
+```
+
+Revise cada migração gerada antes de aplicá-la. Não aplicar migrações destrutivas sem backup e plano de reversão. Nenhuma migração de tabelas de negócio foi criada nesta etapa.
