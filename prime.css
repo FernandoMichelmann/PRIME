@@ -2772,3 +2772,267 @@ tbody tr:hover {
         white-space: nowrap;
     }
 }
+
+
+/* =========================================
+   PRIME — CENTRAL DE VIAGENS
+========================================= */
+
+.vehicle-trips-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.vehicle-trip-form-panel,
+.vehicle-trips-list-panel {
+    max-width: 1000px;
+    margin-top: 22px;
+    padding: 22px;
+    background: linear-gradient(145deg, #0C1727, #091321);
+    border: 1px solid #1D2D43;
+    border-radius: 10px;
+}
+
+.vehicle-trip-panel-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.vehicle-trip-panel-heading h2 {
+    margin: 0;
+    color: #F1F5F9;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.vehicle-trip-panel-heading p {
+    margin: 7px 0 0;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.6;
+}
+
+.vehicle-trip-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px 16px;
+}
+
+.vehicle-trip-form .form-field {
+    min-width: 0;
+    gap: 8px;
+}
+
+.vehicle-trip-form .form-field input {
+    width: 100%;
+    min-height: 42px;
+    padding: 0 12px;
+    color: var(--text);
+    background: #08111F;
+    border: 1px solid #27384E;
+    border-radius: 6px;
+    outline: none;
+    font-size: 11px;
+}
+
+.vehicle-trip-form .form-field input:focus {
+    border-color: var(--blue);
+    box-shadow: 0 0 0 3px #3B82F61A;
+}
+
+.vehicle-trip-form input[type="date"] {
+    color-scheme: dark;
+}
+
+.vehicle-trip-manifest-field {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 9px;
+    grid-column: 1 / -1;
+    padding: 16px;
+    background: #08111F;
+    border: 1px dashed #2A405D;
+    border-radius: 7px;
+}
+
+.form-field-label {
+    color: #B9C6D7;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+.vehicle-trip-import-button {
+    min-height: 38px;
+}
+
+.vehicle-trip-file-name {
+    max-width: 100%;
+    margin: 0;
+    color: #B9C6D7;
+    font-size: 10px;
+    overflow-wrap: anywhere;
+}
+
+.vehicle-trip-import-note {
+    margin: 0;
+    color: #71839B;
+    font-size: 9px;
+    line-height: 1.6;
+}
+
+.vehicle-trip-form-actions {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    grid-column: 1 / -1;
+    padding-top: 4px;
+}
+
+.vehicle-trips-count {
+    flex-shrink: 0;
+    padding: 6px 9px;
+    color: #B9D5FF;
+    background: #142B48;
+    border: 1px solid #25466D;
+    border-radius: 5px;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+.vehicle-trips-list {
+    display: grid;
+    gap: 10px;
+}
+
+.vehicle-trip-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 16px;
+    background: #0A1422;
+    border: 1px solid #1D2C41;
+    border-radius: 8px;
+}
+
+.vehicle-trip-card-icon,
+.vehicle-trips-empty-icon {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 42px;
+    height: 42px;
+    color: #8DBBFF;
+    background: #142B48;
+    border: 1px solid #25466D;
+    border-radius: 8px;
+}
+
+.vehicle-trip-card-icon svg,
+.vehicle-trips-empty-icon svg {
+    width: 19px;
+    height: 19px;
+}
+
+.vehicle-trip-card-main {
+    display: grid;
+    min-width: 0;
+    gap: 6px;
+}
+
+.vehicle-trip-card-main strong {
+    color: #F1F5F9;
+    font-size: 12px;
+}
+
+.vehicle-trip-card-main > span {
+    color: #9BAEC5;
+    font-size: 10px;
+    overflow-wrap: anywhere;
+}
+
+.vehicle-trip-card-main .vehicle-trip-manifest-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: #80B4F9;
+}
+
+.vehicle-trip-manifest-status svg {
+    width: 13px;
+    height: 13px;
+    flex-shrink: 0;
+}
+
+.vehicle-trips-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 36px 16px;
+    text-align: center;
+    background: #091321;
+    border: 1px dashed #263950;
+    border-radius: 8px;
+}
+
+.vehicle-trips-empty strong {
+    color: #E2EAF5;
+    font-size: 12px;
+}
+
+.vehicle-trips-empty p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 10px;
+    line-height: 1.6;
+}
+
+@media (max-width: 600px) {
+    .vehicle-trips-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .vehicle-trips-toolbar button {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .vehicle-trip-form-panel,
+    .vehicle-trips-list-panel {
+        padding: 15px;
+    }
+
+    .vehicle-trip-form {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .vehicle-trip-manifest-field,
+    .vehicle-trip-form-actions {
+        grid-column: auto;
+    }
+
+    .vehicle-trip-form-actions {
+        flex-direction: column-reverse;
+        align-items: stretch;
+    }
+
+    .vehicle-trip-form-actions button {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .vehicle-trip-panel-heading {
+        flex-direction: column;
+    }
+}
