@@ -1,0 +1,58 @@
+name: Backend CI
+
+on:
+  push:
+    branches:
+      - feature/backend-prime-local
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: prime
+          POSTGRES_PASSWORD: prime_ci_password
+          POSTGRES_DB: prime_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U prime -d prime_ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      APP_ENV: test
+      DATABASE_URL: postgresql+psycopg://prime:prime_ci_password@localhost:5432/prime_ci
+      SECRET_KEY: ci-only-secret-key-not-for-production-123456
+      ACCESS_TOKEN_EXPIRE_MINUTES: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run tests
+        run: python -m pytest -q
+      - name: Apply migrations to clean PostgreSQL
+        run: python -m alembic upgrade head
+      - name: Verify migration revision
+        run: python -m alembic current
