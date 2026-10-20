@@ -731,7 +731,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // --------------------------------------------------
 
     function setActiveNavigation(pageName) {
-        $$$(".nav-item").forEach((item) => {
+        $(".nav-item").forEach((item) => {
             item.classList.toggle("active", item.dataset.page === pageName);
         });
     }
