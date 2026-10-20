@@ -219,7 +219,8 @@ document.addEventListener("DOMContentLoaded", () => {
     function getMonthlyExpenseTotal(month = currentMonth()) {
         const ordinaryExpenses = getMonthTransactions(month).filter((item) => item.type === "expense").reduce((sum, item) => sum + item.amount, 0);
         const registeredExpenses = getInstallments().filter((item) => monthKey(item.date) === month).reduce((sum, item) => sum + item.amount, 0);
-        return ordinaryExpenses + registeredExpenses + getFinalizedTripTotals(month).expense + getMonthlyVehicleMaintenanceTotal(month);
+        const payrollCost = window.PRIMEPayroll ? window.PRIMEPayroll.getCompetencyCost(month) : 0;
+        return ordinaryExpenses + registeredExpenses + getFinalizedTripTotals(month).expense + getMonthlyVehicleMaintenanceTotal(month) + payrollCost;
     }
 
     function getMonthlyRevenueTotal(month = currentMonth()) {
@@ -252,7 +253,8 @@ document.addEventListener("DOMContentLoaded", () => {
             totals.expense += (Array.isArray(trip.extraCosts) ? trip.extraCosts : []).reduce((sum, cost) => sum + Math.max(0, Number(cost.amount) || 0), 0);
             return totals;
         }, { revenue: 0, expense: 0 });
-        return ordinaryTotals.revenue - ordinaryTotals.expense - paidInstallments + finalizedTrips.revenue - finalizedTrips.expense;
+        const paidPayroll = window.PRIMEPayroll ? window.PRIMEPayroll.getPaidPaymentsTotal() : 0;
+        return ordinaryTotals.revenue - ordinaryTotals.expense - paidInstallments - paidPayroll + finalizedTrips.revenue - finalizedTrips.expense;
     }
 
     function getExpenseCategories() {
@@ -266,7 +268,8 @@ document.addEventListener("DOMContentLoaded", () => {
             ...getInstallments()
                 .filter((item) => monthKey(item.date) === currentMonth())
                 .map((item) => ({ amount: item.amount, category: item.category || "Outros" })),
-            ...getVehicleCostOccurrences(currentMonth()).map((item) => ({ amount: item.occurrenceAmount, category: "Manutenção" }))
+            ...getVehicleCostOccurrences(currentMonth()).map((item) => ({ amount: item.occurrenceAmount, category: "Manutenção" })),
+            ...(window.PRIMEPayroll && window.PRIMEPayroll.getCompetencyCost(currentMonth()) > 0 ? [{ amount: window.PRIMEPayroll.getCompetencyCost(currentMonth()), category: "Pessoal" }] : [])
         ];
 
         currentExpenses.forEach((expense) => {
@@ -1628,7 +1631,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (section === "folha") {
-            showToast('A área "Folha" será implementada em uma próxima etapa.');
+            if (window.PRIMEPayroll) {
+                window.PRIMEPayroll.onBack = () => { renderMatrixOptions(); if ($("#currentPage")) $("#currentPage").textContent = "Matriz"; window.scrollTo({ top: 0, behavior: "smooth" }); };
+                window.PRIMEPayroll.render(expensesPage);
+                if ($("#currentPage")) $("#currentPage").textContent = "Folha";
+                window.scrollTo({ top: 0, behavior: "smooth" });
+            } else { showToast("Não foi possível carregar o módulo Folha."); }
         }
     }
 
