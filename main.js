@@ -37,6 +37,8 @@ document.addEventListener("DOMContentLoaded", () => {
     let expensesPage = null;
     let expenseFormDraft = null;
     let variableExpenseFilter = "all";
+    const VEHICLE_TRIPS_STORAGE_KEY = "primeVehicleTripsV1";
+    let vehicleTrips = loadVehicleTrips();
 
     const transactions = [];
 
@@ -97,6 +99,29 @@ document.addEventListener("DOMContentLoaded", () => {
         } catch (error) {
             console.error("Não foi possível salvar as despesas:", error);
             showToast("Não foi possível salvar. Verifique o armazenamento do navegador.");
+            return false;
+        }
+    }
+
+    function loadVehicleTrips() {
+        try {
+            const saved = localStorage.getItem(VEHICLE_TRIPS_STORAGE_KEY);
+            const parsed = saved ? JSON.parse(saved) : [];
+
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            console.error("Não foi possível carregar as viagens:", error);
+            return [];
+        }
+    }
+
+    function persistVehicleTrips() {
+        try {
+            localStorage.setItem(VEHICLE_TRIPS_STORAGE_KEY, JSON.stringify(vehicleTrips));
+            return true;
+        } catch (error) {
+            console.error("Não foi possível salvar as viagens:", error);
+            showToast("Não foi possível salvar a viagem. Verifique o armazenamento do navegador.");
             return false;
         }
     }
@@ -831,13 +856,202 @@ document.addEventListener("DOMContentLoaded", () => {
                     <span class="expenses-option-icon"><i data-lucide="${icon}"></i></span>
                     <span class="expenses-option-copy">
                         <strong>Módulo em preparação</strong>
-                        <span>A navegação está pronta. O formulário de lançamento, a listagem e os relatórios desta categoria serão implementados na próxima etapa.</span>
+                        <span>A área de manutenção será desenvolvida em uma próxima etapa.</span>
                     </span>
                 </div>
             </div>
         `;
 
         bindExpenseButtons();
+        refreshIcons();
+    }
+
+    function renderVehicleTripsPage(showForm = false) {
+        if (!expensesPage) return;
+
+        const sortedTrips = [...vehicleTrips].sort((a, b) =>
+            String(b.tripDate || "").localeCompare(String(a.tripDate || ""))
+        );
+
+        expensesPage.innerHTML = `
+            <div class="expenses-page-header">
+                <div class="eyebrow">GESTÃO FINANCEIRA / VEÍCULOS</div>
+                <h1>Despesa de viagem<span class="blue-period">.</span></h1>
+                <p>Cadastre viagens e mantenha os dados dos motoristas, veículos e manifestos organizados.</p>
+
+                <div class="vehicle-trips-toolbar">
+                    <button type="button" class="button-secondary"
+                        data-expense-action="back-vehicles">
+                        <i data-lucide="arrow-left"></i> Voltar para Veículos
+                    </button>
+                    <button type="button" class="button-primary"
+                        data-trip-action="new" ${showForm ? "hidden" : ""}>
+                        <i data-lucide="plus"></i> Cadastrar viagem
+                    </button>
+                </div>
+            </div>
+
+            ${showForm ? `
+                <section class="vehicle-trip-form-panel" aria-labelledby="vehicleTripFormTitle">
+                    <div class="vehicle-trip-panel-heading">
+                        <div>
+                            <h2 id="vehicleTripFormTitle">Nova viagem</h2>
+                            <p>Informe os dados básicos da viagem e selecione o manifesto, se já estiver disponível.</p>
+                        </div>
+                    </div>
+
+                    <form id="vehicleTripForm" class="vehicle-trip-form">
+                        <label class="form-field">
+                            Motorista
+                            <input type="text" name="driver" maxlength="120"
+                                placeholder="Nome completo do motorista" required>
+                        </label>
+
+                        <label class="form-field">
+                            Placa do veículo
+                            <input type="text" name="plate" maxlength="8"
+                                placeholder="ABC1D23" autocomplete="off" required>
+                        </label>
+
+                        <label class="form-field">
+                            Data da viagem
+                            <input type="date" name="tripDate" value="${todayISO}" required>
+                        </label>
+
+                        <div class="vehicle-trip-manifest-field">
+                            <span class="form-field-label">Manifesto da viagem</span>
+                            <input type="file" data-trip-manifest
+                                accept=".pdf,.xlsx,.xls,.csv,.xml,.jpg,.jpeg,.png"
+                                hidden>
+                            <button type="button" class="button-secondary vehicle-trip-import-button"
+                                data-trip-action="import-manifest">
+                                <i data-lucide="file-up"></i> Importar manifesto
+                            </button>
+                            <p class="vehicle-trip-file-name" data-trip-file-name>
+                                Nenhum manifesto selecionado.
+                            </p>
+                            <p class="vehicle-trip-import-note">
+                                A leitura automática de fretes e destinos será configurada conforme o formato do manifesto utilizado pela empresa.
+                            </p>
+                        </div>
+
+                        <div class="vehicle-trip-form-actions">
+                            <button type="button" class="button-secondary" data-trip-action="cancel">
+                                Cancelar
+                            </button>
+                            <button type="submit" class="button-primary">
+                                <i data-lucide="save"></i> Salvar viagem
+                            </button>
+                        </div>
+                    </form>
+                </section>
+            ` : ""}
+
+            <section class="vehicle-trips-list-panel" aria-labelledby="vehicleTripsListTitle">
+                <div class="vehicle-trip-panel-heading">
+                    <div>
+                        <h2 id="vehicleTripsListTitle">Viagens cadastradas</h2>
+                        <p>Consulte os registros de viagens já adicionados ao PRIME.</p>
+                    </div>
+                    <span class="vehicle-trips-count">${sortedTrips.length} ${sortedTrips.length === 1 ? "viagem" : "viagens"}</span>
+                </div>
+
+                ${sortedTrips.length ? `
+                    <div class="vehicle-trips-list">
+                        ${sortedTrips.map((trip) => `
+                            <article class="vehicle-trip-card">
+                                <div class="vehicle-trip-card-icon">
+                                    <i data-lucide="route"></i>
+                                </div>
+                                <div class="vehicle-trip-card-main">
+                                    <strong>${escapeHTML(trip.driver)}</strong>
+                                    <span>Placa: ${escapeHTML(trip.plate)}</span>
+                                    <span>Data: ${dateLabel(trip.tripDate)}</span>
+                                    <span class="vehicle-trip-manifest-status">
+                                        <i data-lucide="${trip.manifestName ? "file-check-2" : "file"}"></i>
+                                        ${trip.manifestName ? "Manifesto: " + escapeHTML(trip.manifestName) : "Manifesto não anexado"}
+                                    </span>
+                                </div>
+                            </article>
+                        `).join("")}
+                    </div>
+                ` : `
+                    <div class="vehicle-trips-empty">
+                        <span class="vehicle-trips-empty-icon"><i data-lucide="truck"></i></span>
+                        <strong>Nenhuma viagem cadastrada</strong>
+                        <p>Clique em “Cadastrar viagem” para registrar a primeira viagem.</p>
+                    </div>
+                `}
+            </section>
+        `;
+
+        bindExpenseButtons();
+
+        const form = $("#vehicleTripForm", expensesPage);
+        const manifestInput = $("[data-trip-manifest]", expensesPage);
+        const manifestName = $("[data-trip-file-name]", expensesPage);
+        let selectedManifestName = "";
+
+        $("[data-trip-action='new']", expensesPage)?.addEventListener("click", () => {
+            renderVehicleTripsPage(true);
+        });
+
+        $("[data-trip-action='cancel']", expensesPage)?.addEventListener("click", () => {
+            renderVehicleTripsPage(false);
+        });
+
+        $("[data-trip-action='import-manifest']", expensesPage)?.addEventListener("click", () => {
+            manifestInput?.click();
+        });
+
+        manifestInput?.addEventListener("change", () => {
+            selectedManifestName = manifestInput.files?.[0]?.name || "";
+            if (manifestName) {
+                manifestName.textContent = selectedManifestName || "Nenhum manifesto selecionado.";
+            }
+        });
+
+        const plateInput = form?.elements.plate;
+        plateInput?.addEventListener("input", () => {
+            plateInput.value = plateInput.value.toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 8);
+        });
+
+        form?.addEventListener("submit", (event) => {
+            event.preventDefault();
+
+            const formData = new FormData(form);
+            const driver = String(formData.get("driver") || "").trim();
+            const plate = String(formData.get("plate") || "").trim().toUpperCase();
+            const tripDate = String(formData.get("tripDate") || "");
+
+            if (!driver || !plate || !tripDate) {
+                showToast("Preencha motorista, placa e data da viagem.");
+                return;
+            }
+
+            const trip = {
+                id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+                driver,
+                plate,
+                tripDate,
+                manifestName: selectedManifestName,
+                createdAt: new Date().toISOString()
+            };
+
+            vehicleTrips.push(trip);
+
+            if (!persistVehicleTrips()) {
+                vehicleTrips = vehicleTrips.filter((item) => item.id !== trip.id);
+                return;
+            }
+
+            renderVehicleTripsPage(false);
+            if ($("#currentPage")) {
+                $("#currentPage").textContent = "Despesa de viagem";
+            }
+            showToast("Viagem cadastrada com sucesso.");
+        });
+
         refreshIcons();
     }
 
@@ -910,11 +1124,13 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         if (section === "despesa-viagem") {
-            renderVehicleExpenseCategory(
-                "Despesa de viagem",
-                "Controle de custos de viagem, como combustível, diárias, descargas e outras despesas da rota.",
-                "route"
-            );
+            renderVehicleTripsPage(false);
+
+            if ($("#currentPage")) {
+                $("#currentPage").textContent = "Despesa de viagem";
+            }
+
+            window.scrollTo({ top: 0, behavior: "smooth" });
             return;
         }
 
