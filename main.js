@@ -884,10 +884,11 @@ document.addEventListener("DOMContentLoaded", () => {
                         data-expense-action="back-vehicles">
                         <i data-lucide="arrow-left"></i> Voltar para Veículos
                     </button>
-                    <button type="button" class="button-primary"
-                        data-trip-action="new" ${showForm ? "hidden" : ""}>
-                        <i data-lucide="plus"></i> Cadastrar viagem
-                    </button>
+                    ${showForm ? "" : `
+                        <button type="button" class="button-primary" data-trip-action="new">
+                            <i data-lucide="plus"></i> Cadastrar viagem
+                        </button>
+                    `}
                 </div>
             </div>
 
