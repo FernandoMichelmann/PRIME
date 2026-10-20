@@ -1026,8 +1026,15 @@ document.addEventListener("DOMContentLoaded", () => {
                 const renderExtraFields = () => {
                     if (!extraFields || !categorySelect) return;
                     const category = categorySelect.value;
-                    const field = (label, name, type = "text", placeholder = "", required = false, options = "") =>
-                        '<label class="form-field">' + label + (type === "select" ? '<select name="' + name + '"' + (required ? " required" : "") + '>' + options + '</select>' : '<input name="' + name + '" type="' + type + '" ' + (type === "number" ? 'min="0" step="0.01" ' : "") + 'placeholder="' + placeholder + '"' + (required ? " required" : "") + '></label>';
+                    const field = (label, name, type = "text", placeholder = "", required = false, options = "") => {
+                        const requiredAttribute = required ? " required" : "";
+                        const numberAttributes = type === "number" ? ' min="0" step="0.01"' : "";
+                        const control = type === "select"
+                            ? `<select name="${name}"${requiredAttribute}>${options}</select>`
+                            : `<input name="${name}" type="${type}"${numberAttributes} placeholder="${placeholder}"${requiredAttribute}>`;
+
+                        return `<label class="form-field">${label}${control}</label>`;
+                    };
                     let html = "";
                     if (category === "__custom__") {
                         html += field("Nome do novo tipo de custo", "customCategory", "text", "Ex.: lavagem", true);
