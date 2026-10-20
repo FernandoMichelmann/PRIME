@@ -31,6 +31,15 @@ python -m uvicorn app.main:app --reload --reload-dir app --reload-dir migrations
 - Processo ativo: `http://127.0.0.1:8000/health/live`
 - Banco acessível: `http://127.0.0.1:8000/health/ready`
 
+## Autenticação inicial
+
+- `POST /api/v1/auth/login`: recebe `email` e `password` em JSON e devolve um token JWT de acesso.
+- `GET /api/v1/auth/me`: exige `Authorization: Bearer <token>` e retorna a identidade e as empresas vinculadas.
+- `GET /api/v1/auth/companies`: lista apenas empresas ativas com vínculo ativo para o usuário autenticado.
+- Dependência `require_company_permission("permission.code")`: exige token, cabeçalho `X-Company-ID`, vínculo ativo, empresa ativa e permissão correspondente.
+
+O token expira em 30 minutos por padrão. Senhas devem ser armazenadas somente como hash Argon2id. As rotas não criam usuários ou empresas automaticamente; o provisionamento inicial controlado será uma etapa separada. Não existe recuperação de senha ou refresh token nesta fase.
+
 ## Migrações
 
 Revise a migração antes de aplicar. Em ambiente local, com o banco correto selecionado:
@@ -63,4 +72,6 @@ python -m pytest -q
 - `role_permissions`: permissões de cada papel.
 - `audit_logs`: trilha de auditoria.
 
-A presença dessas tabelas não significa que a autorização multiempresa já esteja concluída: cada endpoint de negócio deverá validar a identidade, a empresa ativa e as permissões no backend. Ainda não há endpoints de login, tokens, cadastro de empresas, dados de folha/financeiro/viagens nem importação do `localStorage`. Não publicar a API nem expor o PostgreSQL à rede nesta etapa.
+A autorização multiempresa deve ser aplicada explicitamente em cada endpoint de negócio. O helper de autorização já valida a empresa e a permissão no banco, mas ainda não há rotas de negócio usando-o. Ainda não existem endpoints de cadastro de empresas/usuários, dados de folha/financeiro/viagens nem importação do `localStorage`. Não publicar a API nem expor o PostgreSQL à rede nesta etapa.
+
+Em produção, configure `APP_ENV=production` e `SECRET_KEY` com um segredo aleatório exclusivo de pelo menos 32 caracteres. O segredo de desenvolvimento não deve ser usado em produção.
