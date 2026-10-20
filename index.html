@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#050B16">
+    <meta name="description" content="PRIME — Gestão financeira empresarial.">
+    <title>PRIME | Gestão Financeira</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet">
+
+    <link rel="stylesheet" href="./prime.css">
+
+    <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="./main.js" defer></script>
+</head>
+
+<body>
+    <div class="app-shell">
+        <aside class="sidebar" id="sidebar">
+            <a class="brand" href="#dashboard" aria-label="PRIME página inicial">
+                <span class="brand-symbol">P</span>
+                <span class="brand-copy">
+                    <strong>PRIME</strong>
+                    <small>BUSINESS FINANCIAL MANAGEMENT</small>
+                </span>
+            </a>
+
+            <div class="sidebar-label">MENU PRINCIPAL</div>
+
+            <nav class="navigation" aria-label="Navegação principal">
+                <a class="nav-item active" href="#dashboard" data-page="Dashboard">
+                    <i data-lucide="layout-dashboard"></i><span>Dashboard</span>
+                </a>
+                <a class="nav-item" href="#expenses" data-page="Despesas">
+                    <i data-lucide="trending-down"></i><span>Despesas</span>
+                </a>
+                <a class="nav-item" href="#revenue" data-page="Receitas">
+                    <i data-lucide="trending-up"></i><span>Receitas</span>
+                </a>
+                <a class="nav-item" href="#cash-flow" data-page="Fluxo de caixa">
+                    <i data-lucide="chart-no-axes-combined"></i><span>Fluxo de caixa</span>
+                </a>
+                <a class="nav-item" href="#banks" data-page="Bancos e cartões">
+                    <i data-lucide="landmark"></i><span>Bancos e cartões</span>
+                </a>
+                <a class="nav-item" href="#payables" data-page="Contas a pagar">
+                    <i data-lucide="calendar-clock"></i><span>Contas a pagar</span>
+                </a>
+                <a class="nav-item" href="#receivables" data-page="Contas a receber">
+                    <i data-lucide="wallet"></i><span>Contas a receber</span>
+                </a>
+                <a class="nav-item" href="#reports" data-page="Relatórios">
+                    <i data-lucide="file-chart-column"></i><span>Relatórios</span>
+                </a>
+
+                <div class="nav-divider"></div>
+
+                <a class="nav-item" href="#registrations" data-page="Cadastros">
+                    <i data-lucide="contact-round"></i><span>Cadastros</span>
+                </a>
+                <a class="nav-item" href="#settings" data-page="Configurações">
+                    <i data-lucide="settings-2"></i><span>Configurações</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="footer-mark">P</div>
+                <div>
+                    <strong>PRIME</strong>
+                    <span>MORE CONTROL. MORE FUTURE.</span>
+                </div>
+            </div>
+        </aside>
+
+        <main class="main-area" id="dashboard">
+            <header class="topbar">
+                <button class="icon-button mobile-menu" id="menuToggle" aria-label="Abrir menu" aria-expanded="false">
+                    <i data-lucide="menu"></i>
+                </button>
+
+                <div class="breadcrumb">
+                    <span>PRIME</span>
+                    <i data-lucide="chevron-right"></i>
+                    <strong id="currentPage">Dashboard</strong>
+                </div>
+
+                <div class="topbar-actions">
+                    <label class="search-box">
+                        <i data-lucide="search"></i>
+                        <input id="globalSearch" type="search" placeholder="Buscar lançamentos..."
+                            aria-label="Buscar lançamentos">
+                        <kbd>⌘ K</kbd>
+                    </label>
+
+                    <button class="icon-button notification-button" id="notificationButton" aria-label="Notificações">
+                        <i data-lucide="bell"></i>
+                        <span class="notification-dot"></span>
+                    </button>
+
+                    <div class="profile">
+                        <div class="avatar">AD</div>
+                        <div class="profile-info">
+                            <strong>Administrador</strong>
+                            <span>Gestor financeiro</span>
+                        </div>
+                        <i data-lucide="chevron-down" class="profile-chevron"></i>
+                    </div>
+                </div>
+            </header>
+
+            <div class="content">
+                <section class="welcome-section">
+                    <div>
+                        <div class="eyebrow">VISÃO GERAL FINANCEIRA</div>
+                        <h1>Bem-vindo ao PRIME<span class="blue-period">.</span></h1>
+                        <p>Seus indicadores financeiros serão atualizados conforme os lançamentos forem registrados.</p>
+                    </div>
+
+                    <button class="button-primary" id="newEntryButton">
+                        <i data-lucide="plus"></i>
+                        Novo lançamento
+                    </button>
+                </section>
+
+                <section class="kpi-grid" aria-label="Indicadores financeiros">
+                    <article class="kpi-card">
+                        <div class="kpi-top">
+                            <span>Saldo em conta</span>
+                            <span class="kpi-icon blue-icon">
+                                <i data-lucide="wallet"></i>
+                            </span>
+                        </div>
+                        <div class="kpi-value" id="balanceValue">R$ 0,00</div>
+                        <div class="kpi-bottom">
+                            <span class="status-neutral">
+                                <i data-lucide="minus"></i> Sem movimentações
+                            </span>
+                            <span class="muted">Consolidado</span>
+                        </div>
+                    </article>
+
+                    <article class="kpi-card">
+                        <div class="kpi-top">
+                            <span>Receitas do mês</span>
+                            <span class="kpi-icon green-icon">
+                                <i data-lucide="arrow-down-left"></i>
+                            </span>
+                        </div>
+                        <div class="kpi-value" id="revenueValue">R$ 0,00</div>
+                        <div class="kpi-bottom">
+                            <span class="status-neutral">
+                                <i data-lucide="minus"></i> Sem registros
+                            </span>
+                            <span class="muted">Mês atual</span>
+                        </div>
+                    </article>
+
+                    <article class="kpi-card">
+                        <div class="kpi-top">
+                            <span>Despesas do mês</span>
+                            <span class="kpi-icon red-icon">
+                                <i data-lucide="arrow-up-right"></i>
+                            </span>
+                        </div>
+                        <div class="kpi-value" id="expenseValue">R$ 0,00</div>
+                        <div class="kpi-bottom">
+                            <span class="status-neutral">
+                                <i data-lucide="minus"></i> Sem registros
+                            </span>
+                            <span class="muted">Mês atual</span>
+                        </div>
+                    </article>
+
+                    <article class="kpi-card">
+                        <div class="kpi-top">
+                            <span>Resultado financeiro</span>
+                            <span class="kpi-icon blue-icon">
+                                <i data-lucide="chart-no-axes-combined"></i>
+                            </span>
+                        </div>
+                        <div class="kpi-value" id="resultValue">R$ 0,00</div>
+                        <div class="kpi-bottom">
+                            <span class="status-neutral">
+                                <i data-lucide="minus"></i> Sem registros
+                            </span>
+                            <span class="muted">Mês atual</span>
+                        </div>
+                    </article>
+                </section>
+
+                <section class="charts-grid">
+                    <article class="panel cashflow-panel" id="cash-flow">
+                        <div class="panel-heading">
+                            <div>
+                                <h2>Fluxo de caixa</h2>
+                                <p>Comparativo entre receitas e despesas</p>
+                            </div>
+
+                            <select id="cashflowPeriod" class="period-select" aria-label="Período do fluxo de caixa">
+                                <option value="6">Últimos 6 meses</option>
+                                <option value="12">Últimos 12 meses</option>
+                            </select>
+                        </div>
+
+                        <div class="chart-summary">
+                            <div>
+                                <span class="legend-dot revenue-dot"></span>
+                                <span>Receitas</span>
+                                <strong id="chartRevenueTotal">R$ 0,00</strong>
+                            </div>
+                            <div>
+                                <span class="legend-dot expense-dot"></span>
+                                <span>Despesas</span>
+                                <strong id="chartExpenseTotal">R$ 0,00</strong>
+                            </div>
+                        </div>
+
+                        <div class="cashflow-chart-wrap">
+                            <canvas id="cashflowChart" aria-label="Gráfico de receitas e despesas mensais"></canvas>
+                        </div>
+                    </article>
+
+                    <article class="panel expenses-panel" id="expenses">
+                        <div class="panel-heading">
+                            <div>
+                                <h2>Despesas por categoria</h2>
+                                <p>Distribuição dos gastos</p>
+                            </div>
+                            <button class="icon-button small-icon-button" aria-label="Opções do gráfico">
+                                <i data-lucide="ellipsis"></i>
+                            </button>
+                        </div>
+
+                        <div class="donut-wrap">
+                            <canvas id="expensesChart" aria-label="Gráfico de despesas por categoria"></canvas>
+                            <div class="donut-center">
+                                <span>Total de despesas</span>
+                                <strong id="categoryTotal">R$ 0,00</strong>
+                            </div>
+                        </div>
+
+                        <div class="category-legend" id="categoryLegend"></div>
+                    </article>
+                </section>
+
+                <section class="bottom-grid">
+                    <article class="panel bills-panel" id="payables">
+                        <div class="panel-heading">
+                            <div>
+                                <h2>Contas a pagar</h2>
+                                <p>Compromissos financeiros próximos</p>
+                            </div>
+                            <a class="text-link" href="#payables" data-page="Contas a pagar">
+                                Ver todas <i data-lucide="arrow-up-right"></i>
+                            </a>
+                        </div>
+
+                        <div class="table-scroll">
+                            <table>
+                                <thead>
+                                    <tr>
+                                        <th>Descrição</th>
+                                        <th>Vencimento</th>
+                                        <th>Status</th>
+                                        <th class="align-right">Valor</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="billsTable">
+                                    <tr>
+                                        <td colspan="4" class="empty-state">
+                                            Nenhuma conta a pagar cadastrada.
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </article>
+
+                    <article class="panel transactions-panel" id="revenue">
+                        <div class="panel-heading">
+                            <div>
+                                <h2>Transações recentes</h2>
+                                <p>Últimas movimentações registradas</p>
+                            </div>
+                            <button class="icon-button small-icon-button" id="refreshTransactions"
+                                aria-label="Atualizar transações">
+                                <i data-lucide="refresh-cw"></i>
+                            </button>
+                        </div>
+
+                        <div class="transaction-list" id="transactionList">
+                            <div class="empty-state">
+                                Nenhuma movimentação registrada.
+                            </div>
+                        </div>
+                    </article>
+                </section>
+
+                <footer class="app-footer">
+                    <span>PRIME <span class="footer-separator">/</span> BUSINESS FINANCIAL MANAGEMENT</span>
+                    <span>MORE CONTROL. MORE FUTURE.</span>
+                </footer>
+            </div>
+        </main>
+    </div>
+
+    <div class="modal-backdrop" id="entryModal" hidden>
+        <section class="entry-modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+            <div class="modal-heading">
+                <div>
+                    <h2 id="modalTitle">Novo lançamento</h2>
+                    <p>Registre uma movimentação financeira.</p>
+                </div>
+                <button class="icon-button" id="closeModal" aria-label="Fechar">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+
+            <form id="entryForm">
+                <label class="form-field">
+                    Tipo de lançamento
+                    <select name="type" required>
+                        <option value="revenue">Receita</option>
+                        <option value="expense">Despesa</option>
+                    </select>
+                </label>
+
+                <label class="form-field">
+                    Descrição
+                    <input name="description" type="text" maxlength="100" required placeholder="Ex.: Frete — Cliente">
+                </label>
+
+                <label class="form-field">
+                    Valor (R$)
+                    <input name="amount" type="number" min="0.01" step="0.01" required placeholder="0,00">
+                </label>
+
+                <label class="form-field">
+                    Data
+                    <input name="date" type="date" required>
+                </label>
+
+                <p class="form-note">
+                    Os lançamentos deste protótipo ficam disponíveis somente
+                    durante a sessão atual. O salvamento permanente será
+                    implementado em uma próxima etapa.
+                </p>
+
+                <div class="modal-actions">
+                    <button type="button" class="button-secondary" id="cancelModal">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="button-primary">
+                        Registrar lançamento
+                    </button>
+                </div>
+            </form>
+        </section>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+
+</html>
