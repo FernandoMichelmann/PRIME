@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: prime-postgres-local
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: prime_dev
+      POSTGRES_USER: prime_dev
+      POSTGRES_PASSWORD: prime_dev_local_only
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - prime_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prime_dev -d prime_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  prime_postgres_data:
