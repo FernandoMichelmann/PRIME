@@ -969,25 +969,23 @@ document.addEventListener("DOMContentLoaded", () => {
         const dash = (value) => value === null || value === undefined || value === "" ? "—" : escapeHTML(String(value));
         const cteRows = Array.isArray(data.cteRows) ? data.cteRows : [];
         const cities = Array.isArray(data.cities) ? data.cities : [];
-        const metrics = [["QTDE CTe", dash(data.totalCtes)],
-            ["PESO TOTAL (KG)", data.totalWeight == null ? "—" : formatManifestNumber(data.totalWeight, 1) + " kg"],
-            ["QVOL", data.totalVolumes == null ? "—" : formatManifestNumber(data.totalVolumes, 0)],
-            ["VAL FRETE", data.totalFreight == null ? "—" : "R$ " + formatManifestNumber(data.totalFreight, 2)]];
+        const costs = Array.isArray(trip.extraCosts) ? trip.extraCosts : [];
+        const totalExtras = costs.reduce((sum, cost) => sum + (Number(cost.amount) || 0), 0);
+        const vehiclePay = Number(trip.vehiclePay) || 0;
+        const tripKm = Number(trip.returnKm) > 0 && Number(trip.startKm) >= 0 ? Number(trip.returnKm) - Number(trip.startKm) : 0;
+        const totalCost = vehiclePay + totalExtras;
+        const revenue = Number(data.totalFreight) || 0;
+        const result = revenue - totalCost;
+        const metrics = [["QTDE CTe", dash(data.totalCtes)], ["PESO TOTAL (KG)", data.totalWeight == null ? "—" : formatManifestNumber(data.totalWeight, 1) + " kg"], ["QVOL", data.totalVolumes == null ? "—" : formatManifestNumber(data.totalVolumes, 0)], ["VAL FRETE", data.totalFreight == null ? "—" : "R$ " + formatManifestNumber(data.totalFreight, 2)]];
         const metricHtml = metrics.map((item) => '<article class="vehicle-trip-metric"><span>' + item[0] + '</span><strong>' + item[1] + '</strong></article>').join("");
         const cityHtml = cities.length ? '<div class="vehicle-trip-city-list">' + cities.map((city) => '<span>' + escapeHTML(city) + '</span>').join("") + '</div>' : '<p class="vehicle-trip-no-data">Nenhuma cidade foi identificada no manifesto.</p>';
-        const rowHtml = cteRows.map((row) => '<tr><td>' + escapeHTML(row.cte) + '</td><td>' + escapeHTML(row.city + (row.uf ? "/" + row.uf : "")) + '</td><td>' +
-            (row.weightKg == null ? "—" : formatManifestNumber(row.weightKg, 1)) + '</td><td>' + (row.volumes == null ? "—" : formatManifestNumber(row.volumes, 0)) + '</td><td>' +
-            (row.freightValue == null ? "—" : "R$ " + formatManifestNumber(row.freightValue, 2)) + '</td></tr>').join("");
-        return '<div class="expenses-page-header"><div class="eyebrow">GESTÃO FINANCEIRA / VEÍCULOS / VIAGENS</div><h1>Detalhes da viagem<span class="blue-period">.</span></h1>' +
-            '<p>Dados cadastrais e informações extraídas do manifesto importado.</p><div class="vehicle-trips-toolbar"><button type="button" class="button-secondary" data-trip-action="back-list"><i data-lucide="arrow-left"></i> Voltar para viagens</button></div></div>' +
-            '<section class="vehicle-trip-details-panel"><div class="vehicle-trip-details-heading"><div><span class="vehicle-trip-detail-kicker">DADOS DA VIAGEM</span><h2>' +
-            escapeHTML(trip.driver || "Motorista não informado") + '</h2><p>Placa: ' + escapeHTML(trip.plate || "—") + ' <span>•</span> Data: ' + escapeHTML(dateLabel(trip.tripDate)) +
-            '</p></div><span class="vehicle-trip-details-file"><i data-lucide="file-check-2"></i> ' + escapeHTML(trip.manifestName || "Manifesto não anexado") +
-            '</span></div><div class="vehicle-trip-metrics">' + metricHtml + '</div><div class="vehicle-trip-detail-section"><h3><i data-lucide="map-pin"></i> Cidades destinatárias</h3>' + cityHtml +
-            '</div><div class="vehicle-trip-detail-section vehicle-trip-operational-code"><h3><i data-lucide="file-text"></i> Manifesto operacional</h3><strong>' + dash(data.operationalManifest) +
-            '</strong></div><div class="vehicle-trip-detail-section"><div class="vehicle-trip-table-heading"><div><h3><i data-lucide="files"></i> CT-es identificados</h3><p>Valores por documento fiscal, quando disponíveis no manifesto.</p></div><span>' +
-            cteRows.length + ' CT-e(s)</span></div>' + (cteRows.length ? '<div class="vehicle-trip-table-wrap"><table class="vehicle-trip-cte-table"><thead><tr><th>CT-e</th><th>Cidade</th><th>Peso (kg)</th><th>QVOL</th><th>Val. frete</th></tr></thead><tbody>' +
-            rowHtml + '</tbody></table></div>' : '<p class="vehicle-trip-no-data">Não foi possível separar os CT-es individuais deste arquivo. Os dados gerais identificados continuam disponíveis acima.</p>') + '</div></section>';
+        const rowHtml = cteRows.map((row) => '<tr><td>' + escapeHTML(row.cte) + '</td><td>' + escapeHTML(row.city + (row.uf ? "/" + row.uf : "")) + '</td><td>' + (row.weightKg == null ? "—" : formatManifestNumber(row.weightKg, 1)) + '</td><td>' + (row.volumes == null ? "—" : formatManifestNumber(row.volumes, 0)) + '</td><td>' + (row.freightValue == null ? "—" : "R$ " + formatManifestNumber(row.freightValue, 2)) + '</td></tr>').join("");
+        const costRows = costs.length ? costs.map((cost) => '<div class="vehicle-trip-cost-row"><div><strong>' + escapeHTML(cost.category || "Outro custo") + '</strong><span>' + escapeHTML([cost.location, cost.fuelType, cost.liters ? cost.liters + " L" : "", cost.km ? "KM " + cost.km : "", cost.description].filter(Boolean).join(" • ")) + '</span></div><strong>' + money(Number(cost.amount) || 0) + '</strong><button type="button" class="button-secondary" data-cost-delete="' + escapeHTML(cost.id) + '" aria-label="Excluir custo extra"><i data-lucide="trash-2"></i></button></div>').join("") : '<p class="vehicle-trip-no-data">Nenhum custo extra cadastrado nesta viagem.</p>';
+        return '<div class="expenses-page-header"><div class="eyebrow">GESTÃO FINANCEIRA / VEÍCULOS / VIAGENS</div><h1>Detalhes da viagem<span class="blue-period">.</span></h1><p>Dados cadastrais, custos e informações extraídas do manifesto.</p><div class="vehicle-trips-toolbar"><button type="button" class="button-secondary" data-trip-action="back-list"><i data-lucide="arrow-left"></i> Voltar para viagens</button><button type="button" class="button-danger" data-trip-action="delete-trip"><i data-lucide="trash-2"></i> Excluir viagem</button></div></div>' +
+        '<section class="vehicle-trip-details-panel"><div class="vehicle-trip-details-heading"><div><span class="vehicle-trip-detail-kicker">DADOS DA VIAGEM</span><h2>' + escapeHTML(trip.driver || "Motorista não informado") + '</h2><p>Placa: ' + escapeHTML(trip.plate || "—") + ' <span>•</span> Data: ' + escapeHTML(dateLabel(trip.tripDate)) + '</p></div><span class="vehicle-trip-details-file"><i data-lucide="file-check-2"></i> ' + escapeHTML(trip.manifestName || "Manifesto não anexado") + '</span></div><div class="vehicle-trip-metrics">' + metricHtml + '</div><div class="vehicle-trip-detail-section"><h3><i data-lucide="map-pin"></i> Cidades destinatárias</h3>' + cityHtml + '</div><div class="vehicle-trip-detail-section vehicle-trip-operational-code"><h3><i data-lucide="file-text"></i> Manifesto operacional</h3><strong>' + dash(data.operationalManifest) + '</strong></div>' +
+        '<section class="vehicle-trip-detail-section"><div class="vehicle-trip-table-heading"><div><h3><i data-lucide="files"></i> CT-es identificados</h3><p>Expanda somente quando precisar conferir os documentos.</p></div><span>' + cteRows.length + ' CT-e(s)</span></div><details class="vehicle-trip-cte-disclosure"><summary>Ver CT-es identificados</summary>' + (cteRows.length ? '<div class="vehicle-trip-table-wrap"><table class="vehicle-trip-cte-table"><thead><tr><th>CT-e</th><th>Cidade</th><th>Peso (kg)</th><th>QVOL</th><th>Val. frete</th></tr></thead><tbody>' + rowHtml + '</tbody></table></div>' : '<p class="vehicle-trip-no-data">Não foi possível separar os CT-es individuais deste arquivo. Os dados gerais identificados continuam disponíveis acima.</p>') + '</details></section>' +
+        '<section class="vehicle-trip-detail-section"><h3><i data-lucide="gauge"></i> Quilometragem e pagamento do veículo</h3><form id="tripCostsForm" class="vehicle-trip-cost-form"><label class="form-field">Valor pago ao veículo (R$)<input type="number" name="vehiclePay" min="0" step="0.01" value="' + (trip.vehiclePay ?? "") + '" placeholder="0,00"></label><label class="form-field">KM de saída<input type="number" name="startKm" min="0" step="1" value="' + (trip.startKm ?? "") + '" placeholder="Ex.: 125000"></label><label class="form-field">KM de retorno<input type="number" name="returnKm" min="0" step="1" value="' + (trip.returnKm ?? "") + '" placeholder="Ex.: 125650"></label><div class="vehicle-trip-cost-form-actions"><button class="button-primary" type="submit"><i data-lucide="save"></i> Salvar dados</button></div></form><div class="vehicle-trip-cost-summary"><div><span>Distância percorrida</span><strong>' + (tripKm > 0 ? formatManifestNumber(tripKm, 0) + ' km' : '—') + '</strong></div><div><span>Custos extras</span><strong>' + money(totalExtras) + '</strong></div><div><span>Custo total registrado</span><strong>' + money(totalCost) + '</strong></div><div><span>Resultado estimado do frete</span><strong>' + money(result) + '</strong></div></div></section>' +
+        '<section class="vehicle-trip-detail-section"><div class="vehicle-trip-table-heading"><div><h3><i data-lucide="receipt-text"></i> Custos extras da viagem</h3><p>Abastecimentos, diárias, manutenção e outros custos.</p></div><button type="button" class="button-primary" data-trip-action="add-cost"><i data-lucide="plus"></i> Add custo extra</button></div><div class="vehicle-trip-cost-list">' + costRows + '</div><form id="extraCostForm" class="vehicle-trip-extra-form" hidden><h3>Novo custo extra</h3><label class="form-field">Tipo de custo<select name="category" required><option value="Combustível">Combustível</option><option value="Diária">Diária</option><option value="Manutenção">Manutenção</option><option value="Pedágio">Pedágio</option><option value="Estacionamento">Estacionamento</option><option value="Alimentação">Alimentação</option><option value="Hospedagem">Hospedagem</option><option value="Outro">Outro</option><option value="__custom__">+ Cadastrar novo tipo de custo</option></select></label><div class="extra-cost-fields" data-extra-fields></div><div class="vehicle-trip-form-actions"><button type="button" class="button-secondary" data-trip-action="cancel-cost">Cancelar</button><button type="submit" class="button-primary"><i data-lucide="save"></i> Salvar custo</button></div></form></section></section>';
     }
 
 
@@ -1000,6 +998,95 @@ document.addEventListener("DOMContentLoaded", () => {
                 expensesPage.innerHTML = renderVehicleTripDetailsMarkup(selectedTrip);
                 bindExpenseButtons();
                 $("[data-trip-action='back-list']", expensesPage)?.addEventListener("click", () => renderVehicleTripsPage(false));
+                $("[data-trip-action='delete-trip']", expensesPage)?.addEventListener("click", () => {
+                    if (!window.confirm("Tem certeza que deseja excluir esta viagem e todos os custos extras vinculados? Esta ação não poderá ser desfeita.")) return;
+                    const previous = vehicleTrips;
+                    vehicleTrips = vehicleTrips.filter((item) => String(item.id) !== String(selectedTrip.id));
+                    if (!persistVehicleTrips()) { vehicleTrips = previous; return; }
+                    showToast("Viagem excluída com sucesso.");
+                    renderVehicleTripsPage(false);
+                });
+                const tripCostsForm = $("#tripCostsForm", expensesPage);
+                tripCostsForm?.addEventListener("submit", (event) => {
+                    event.preventDefault();
+                    const fd = new FormData(tripCostsForm);
+                    const startKm = fd.get("startKm") === "" ? null : Number(fd.get("startKm"));
+                    const returnKm = fd.get("returnKm") === "" ? null : Number(fd.get("returnKm"));
+                    if (startKm !== null && returnKm !== null && returnKm < startKm) { showToast("O KM de retorno não pode ser menor que o KM de saída."); return; }
+                    selectedTrip.vehiclePay = Number(fd.get("vehiclePay")) || 0;
+                    selectedTrip.startKm = startKm;
+                    selectedTrip.returnKm = returnKm;
+                    if (!persistVehicleTrips()) return;
+                    showToast("Dados financeiros da viagem salvos.");
+                    renderVehicleTripsPage(false, selectedTrip.id);
+                });
+                const extraCostForm = $("#extraCostForm", expensesPage);
+                const extraFields = $("[data-extra-fields]", expensesPage);
+                const categorySelect = extraCostForm?.elements.category;
+                const renderExtraFields = () => {
+                    if (!extraFields || !categorySelect) return;
+                    const category = categorySelect.value;
+                    const field = (label, name, type = "text", placeholder = "", required = false, options = "") =>
+                        '<label class="form-field">' + label + (type === "select" ? '<select name="' + name + '"' + (required ? " required" : "") + '>' + options + '</select>' : '<input name="' + name + '" type="' + type + '" ' + (type === "number" ? 'min="0" step="0.01" ' : "") + 'placeholder="' + placeholder + '"' + (required ? " required" : "") + '></label>';
+                    let html = "";
+                    if (category === "__custom__") {
+                        html += field("Nome do novo tipo de custo", "customCategory", "text", "Ex.: lavagem", true);
+                        html += field("Descrição", "description", "text", "Detalhes do custo");
+                        html += field("Local", "location", "text", "Opcional");
+                        html += field("Valor pago (R$)", "amount", "number", "0,00", true);
+                        html += field("Data", "date", "date");
+                    } else if (category === "Combustível") {
+                        html += field("Local do abastecimento", "location", "text", "Nome do posto", true);
+                        html += field("Combustível", "fuelType", "select", "", true, '<option>Gasolina</option><option>Gasolina aditivada</option><option>Etanol</option><option>Arla</option><option>Diesel</option>');
+                        html += field("Quantidade (litros)", "liters", "number", "0,00", true);
+                        html += field("Valor por litro (R$)", "unitPrice", "number", "0,00");
+                        html += field("Valor total pago (R$)", "amount", "number", "0,00", true);
+                        html += field("KM do abastecimento", "km", "number", "Ex.: 125400", true);
+                    } else if (category === "Diária") {
+                        html += field("Valor pago (R$)", "amount", "number", "0,00", true);
+                        html += field("Data", "date", "date");
+                        html += field("Descrição", "description", "text", "Ex.: diária do motorista");
+                    } else if (category === "Manutenção") {
+                        html += field("Local da manutenção", "location", "text", "Oficina ou cidade", true);
+                        html += field("Descrição do serviço", "description", "text", "Ex.: troca de óleo", true);
+                        html += field("Valor pago (R$)", "amount", "number", "0,00", true);
+                        html += field("Data", "date", "date");
+                    } else {
+                        html += field("Descrição", "description", "text", "Descreva o custo", true);
+                        html += field("Local", "location", "text", "Opcional");
+                        html += field("Valor pago (R$)", "amount", "number", "0,00", true);
+                        html += field("Data", "date", "date");
+                    }
+                    extraFields.innerHTML = html;
+                };
+                $("[data-trip-action='add-cost']", expensesPage)?.addEventListener("click", () => {
+                    if (!extraCostForm) return;
+                    extraCostForm.hidden = false; renderExtraFields();
+                    extraCostForm.scrollIntoView({ behavior: "smooth", block: "nearest" });
+                });
+                categorySelect?.addEventListener("change", renderExtraFields);
+                $("[data-trip-action='cancel-cost']", expensesPage)?.addEventListener("click", () => { if (extraCostForm) { extraCostForm.reset(); extraCostForm.hidden = true; } });
+                extraCostForm?.addEventListener("submit", (event) => {
+                    event.preventDefault();
+                    const fd = new FormData(extraCostForm);
+                    const amount = Number(fd.get("amount")) || 0;
+                    if (amount <= 0) { showToast("Informe um valor pago maior que zero."); return; }
+                    const rawCategory = String(fd.get("category") || "Outro");
+                    const cost = { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, category: String(rawCategory === "__custom__" ? fd.get("customCategory") : rawCategory || "Outro").trim(), amount, location: String(fd.get("location") || "").trim(), fuelType: String(fd.get("fuelType") || ""), liters: Number(fd.get("liters")) || null, unitPrice: Number(fd.get("unitPrice")) || null, km: Number(fd.get("km")) || null, description: String(fd.get("description") || "").trim(), date: String(fd.get("date") || "") };
+                    if (!cost.category) { showToast("Informe o nome do novo tipo de custo."); return; }
+                    if (!Array.isArray(selectedTrip.extraCosts)) selectedTrip.extraCosts = [];
+                    selectedTrip.extraCosts.push(cost);
+                    if (!persistVehicleTrips()) { selectedTrip.extraCosts.pop(); return; }
+                    showToast("Custo extra cadastrado.");
+                    renderVehicleTripsPage(false, selectedTrip.id);
+                });
+                expensesPage.querySelectorAll("[data-cost-delete]").forEach((button) => button.addEventListener("click", () => {
+                    if (!window.confirm("Excluir este custo extra?")) return;
+                    selectedTrip.extraCosts = (selectedTrip.extraCosts || []).filter((cost) => String(cost.id) !== String(button.dataset.costDelete));
+                    if (!persistVehicleTrips()) return;
+                    showToast("Custo extra excluído.");
+                    renderVehicleTripsPage(false, selectedTrip.id);
+                }));
                 refreshIcons();
                 return;
             }

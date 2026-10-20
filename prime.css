@@ -3079,3 +3079,110 @@ tbody tr:hover {
  .vehicle-trip-metric { padding: 12px; }
  .vehicle-trip-detail-section { padding: 13px; }
 }
+
+
+/* Gestão de custos por viagem */
+.button-danger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border: 1px solid rgba(248, 113, 113, .35);
+    border-radius: 10px;
+    background: rgba(127, 29, 29, .22);
+    color: #FCA5A5;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+.button-danger:hover { background: rgba(127, 29, 29, .38); }
+.vehicle-trip-cte-disclosure {
+    margin-top: 14px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+}
+.vehicle-trip-cte-disclosure summary {
+    color: var(--blue-light);
+    font-weight: 700;
+    cursor: pointer;
+}
+.vehicle-trip-cost-form,
+.vehicle-trip-extra-form {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    margin-top: 16px;
+}
+.vehicle-trip-extra-form {
+    grid-template-columns: 1fr;
+    padding: 20px;
+    margin-top: 20px;
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface-raised);
+}
+.vehicle-trip-extra-form[hidden] { display: none !important; }
+.vehicle-trip-cost-form-actions,
+.vehicle-trip-form-actions {
+    display: flex;
+    align-items: end;
+    justify-content: flex-end;
+    gap: 10px;
+    grid-column: 1 / -1;
+}
+.extra-cost-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+.vehicle-trip-cost-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 18px;
+}
+.vehicle-trip-cost-summary > div {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface-raised);
+}
+.vehicle-trip-cost-summary span,
+.vehicle-trip-cost-row span {
+    color: var(--muted);
+    font-size: .82rem;
+}
+.vehicle-trip-cost-summary strong { font-size: 1.05rem; overflow-wrap: anywhere; }
+.vehicle-trip-cost-list { display: grid; gap: 10px; margin-top: 14px; }
+.vehicle-trip-cost-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 14px;
+    padding: 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--surface);
+}
+.vehicle-trip-cost-row > div { display: grid; gap: 5px; min-width: 0; }
+.vehicle-trip-cost-row span { overflow-wrap: anywhere; }
+.vehicle-trip-cost-row > strong { white-space: nowrap; }
+.vehicle-trip-cost-row button { padding: 8px; }
+@media (max-width: 800px) {
+    .vehicle-trip-cost-form,
+    .vehicle-trip-cost-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+    .vehicle-trip-cost-form,
+    .vehicle-trip-cost-summary,
+    .extra-cost-fields { grid-template-columns: 1fr; }
+    .vehicle-trip-cost-row { grid-template-columns: minmax(0, 1fr) auto; }
+    .vehicle-trip-cost-row button { grid-column: 2; grid-row: 1; }
+    .vehicle-trip-cost-row > strong { grid-column: 1; grid-row: 2; }
+}
