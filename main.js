@@ -866,8 +866,144 @@ document.addEventListener("DOMContentLoaded", () => {
         refreshIcons();
     }
 
-    function renderVehicleTripsPage(showForm = false) {
+
+    // LEITURA E INTERPRETAÇÃO DE MANIFESTOS
+    function loadExternalScript(src, globalName) {
+        if (window[globalName]) return Promise.resolve(window[globalName]);
+        return new Promise((resolve, reject) => {
+            const existing = document.querySelector('script[data-prime-library="' + globalName + '"]');
+            if (existing) {
+                existing.addEventListener("load", () => resolve(window[globalName]), { once: true });
+                existing.addEventListener("error", () => reject(new Error("Não foi possível carregar a biblioteca de leitura.")), { once: true });
+                return;
+            }
+            const script = document.createElement("script");
+            script.src = src;
+            script.async = true;
+            script.dataset.primeLibrary = globalName;
+            script.onload = () => window[globalName] ? resolve(window[globalName]) : reject(new Error("A biblioteca de leitura não foi inicializada."));
+            script.onerror = () => reject(new Error("Falha ao carregar a biblioteca. Verifique sua conexão com a internet."));
+            document.head.appendChild(script);
+        });
+    }
+    async function readManifestFile(file) {
+        const extension = (file.name.split(".").pop() || "").toLowerCase();
+        if (extension === "pdf") {
+            const pdfjs = await loadExternalScript("https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js", "pdfjsLib");
+            pdfjs.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+            const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+            const pages = [];
+            for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+                const page = await pdf.getPage(pageNumber);
+                const textContent = await page.getTextContent();
+                pages.push(textContent.items.map((item) => item.str || "").join(" "));
+            }
+            const text = pages.join("\n");
+            if (!text.replace(/\s/g, "")) throw new Error("Este PDF não contém texto selecionável. Envie um PDF pesquisável ou uma imagem.");
+            return text;
+        }
+        if (extension === "xlsx" || extension === "xls") {
+            const XLSX = await loadExternalScript("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js", "XLSX");
+            const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
+            return workbook.SheetNames.map((name) => XLSX.utils.sheet_to_csv(workbook.Sheets[name], { FS: " " })).join("\n");
+        }
+        if (extension === "csv" || extension === "xml" || extension === "txt") return await file.text();
+        if (["jpg", "jpeg", "png"].includes(extension)) {
+            const Tesseract = await loadExternalScript("https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js", "Tesseract");
+            const result = await Tesseract.recognize(file, "por");
+            return result.data.text || "";
+        }
+        throw new Error("Formato não suportado. Importe PDF, Excel, CSV, XML ou imagem JPG/PNG.");
+    }
+    function parseBrazilianNumber(value) {
+        if (value === null || value === undefined || value === "") return null;
+        const number = Number(String(value).replace(/\./g, "").replace(",", ".").replace(/[^\d.-]/g, ""));
+        return Number.isFinite(number) ? number : null;
+    }
+    function formatManifestNumber(value, decimals = 2) {
+        if (value === null || value === undefined || !Number.isFinite(Number(value))) return "—";
+        return new Intl.NumberFormat("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(Number(value));
+    }
+    function parseManifestData(sourceText) {
+        const flatText = String(sourceText || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+        const cteCodes = [...flatText.matchAll(/\bCWB\d{6,}-\d\b/gi)].map((match) => match[0].toUpperCase());
+        const uniqueCteCodes = [...new Set(cteCodes)];
+        let totalCtes = uniqueCteCodes.length, totalWeight = null, totalVolumes = null, totalFreight = null;
+        const totalsPattern = /T\s*O\s*T\s*A\s*I\s*S\s*D\s*O\s*M\s*D\s*F\s*E/ig;
+        let totalsMatch, lastTotalsMatch = null;
+        while ((totalsMatch = totalsPattern.exec(flatText)) !== null) lastTotalsMatch = totalsMatch;
+        if (lastTotalsMatch) {
+            const totalsText = flatText.slice(lastTotalsMatch.index + lastTotalsMatch[0].length);
+            const numbers = totalsText.match(/\d[\d.]*,\d+|\d+/g) || [];
+            if (numbers.length >= 6) {
+                totalCtes = parseBrazilianNumber(numbers[0]) ?? totalCtes;
+                totalWeight = parseBrazilianNumber(numbers[1]);
+                totalVolumes = parseBrazilianNumber(numbers[3]);
+                totalFreight = parseBrazilianNumber(numbers[5]);
+            }
+        }
+        const cteRows = [];
+        const starts = [...flatText.matchAll(/\b(CWB\d{6,}-\d)\b/gi)];
+        starts.forEach((start, index) => {
+            const segmentStart = start.index + start[0].length;
+            const segmentEnd = index + 1 < starts.length ? starts[index + 1].index : flatText.length;
+            const segment = flatText.slice(segmentStart, segmentEnd);
+            const rowMatch = /\b([A-Z]{2})\s+([A-ZÀ-Ü][A-ZÀ-Ü ]*?)\s+([\d.]+,\d+|\d+)\s+([\d.]+,\d+|\d+)\s+(\d+)\s+([\d.]+,\d+|\d+)\s+([\d.]+,\d+|\d+)\s+([\d.]+,\d+|\d+)\s+[CFT]\s+\d{3}\b/i.exec(segment);
+            if (!rowMatch) return;
+            cteRows.push({ cte: start[1].toUpperCase(), uf: rowMatch[1].toUpperCase(), city: rowMatch[2].trim().replace(/\s+/g, " "),
+                weightKg: parseBrazilianNumber(rowMatch[3]), calculatedWeightKg: parseBrazilianNumber(rowMatch[4]),
+                volumes: parseBrazilianNumber(rowMatch[5]), goodsValue: parseBrazilianNumber(rowMatch[6]),
+                freightValue: parseBrazilianNumber(rowMatch[7]), icmsValue: parseBrazilianNumber(rowMatch[8]) });
+        });
+        const cities = [...new Set(cteRows.map((row) => row.city).filter(Boolean))];
+        const operationalMatch = flatText.match(/MANIFESTO\s+OPERACIONAL[\s\S]{0,260}?\b([A-Z]{3}\d{6}-\d)\b/i);
+        const plateMatch = flatText.match(/\b([A-Z]{3}\d[A-Z0-9]\d{2})\b/i);
+        const driverMatch = flatText.match(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\s+([A-ZÀ-Ü]+(?:\s+[A-ZÀ-Ü]+){1,4})\b/i);
+        return { totalCtes: totalCtes || cteRows.length || null, totalWeight, cities, totalVolumes, totalFreight,
+            operationalManifest: operationalMatch ? operationalMatch[1].toUpperCase() : "",
+            plate: plateMatch ? plateMatch[1].toUpperCase() : "", driver: driverMatch ? driverMatch[1].trim() : "",
+            cteRows, parsedAt: new Date().toISOString() };
+    }
+    function renderVehicleTripDetailsMarkup(trip) {
+        const data = trip.manifestData || {};
+        const dash = (value) => value === null || value === undefined || value === "" ? "—" : escapeHTML(String(value));
+        const cteRows = Array.isArray(data.cteRows) ? data.cteRows : [];
+        const cities = Array.isArray(data.cities) ? data.cities : [];
+        const metrics = [["QTDE CTe", dash(data.totalCtes)],
+            ["PESO TOTAL (KG)", data.totalWeight == null ? "—" : formatManifestNumber(data.totalWeight, 1) + " kg"],
+            ["QVOL", data.totalVolumes == null ? "—" : formatManifestNumber(data.totalVolumes, 0)],
+            ["VAL FRETE", data.totalFreight == null ? "—" : "R$ " + formatManifestNumber(data.totalFreight, 2)]];
+        const metricHtml = metrics.map((item) => '<article class="vehicle-trip-metric"><span>' + item[0] + '</span><strong>' + item[1] + '</strong></article>').join("");
+        const cityHtml = cities.length ? '<div class="vehicle-trip-city-list">' + cities.map((city) => '<span>' + escapeHTML(city) + '</span>').join("") + '</div>' : '<p class="vehicle-trip-no-data">Nenhuma cidade foi identificada no manifesto.</p>';
+        const rowHtml = cteRows.map((row) => '<tr><td>' + escapeHTML(row.cte) + '</td><td>' + escapeHTML(row.city + (row.uf ? "/" + row.uf : "")) + '</td><td>' +
+            (row.weightKg == null ? "—" : formatManifestNumber(row.weightKg, 1)) + '</td><td>' + (row.volumes == null ? "—" : formatManifestNumber(row.volumes, 0)) + '</td><td>' +
+            (row.freightValue == null ? "—" : "R$ " + formatManifestNumber(row.freightValue, 2)) + '</td></tr>').join("");
+        return '<div class="expenses-page-header"><div class="eyebrow">GESTÃO FINANCEIRA / VEÍCULOS / VIAGENS</div><h1>Detalhes da viagem<span class="blue-period">.</span></h1>' +
+            '<p>Dados cadastrais e informações extraídas do manifesto importado.</p><div class="vehicle-trips-toolbar"><button type="button" class="button-secondary" data-trip-action="back-list"><i data-lucide="arrow-left"></i> Voltar para viagens</button></div></div>' +
+            '<section class="vehicle-trip-details-panel"><div class="vehicle-trip-details-heading"><div><span class="vehicle-trip-detail-kicker">DADOS DA VIAGEM</span><h2>' +
+            escapeHTML(trip.driver || "Motorista não informado") + '</h2><p>Placa: ' + escapeHTML(trip.plate || "—") + ' <span>•</span> Data: ' + escapeHTML(dateLabel(trip.tripDate)) +
+            '</p></div><span class="vehicle-trip-details-file"><i data-lucide="file-check-2"></i> ' + escapeHTML(trip.manifestName || "Manifesto não anexado") +
+            '</span></div><div class="vehicle-trip-metrics">' + metricHtml + '</div><div class="vehicle-trip-detail-section"><h3><i data-lucide="map-pin"></i> Cidades destinatárias</h3>' + cityHtml +
+            '</div><div class="vehicle-trip-detail-section vehicle-trip-operational-code"><h3><i data-lucide="file-text"></i> Manifesto operacional</h3><strong>' + dash(data.operationalManifest) +
+            '</strong></div><div class="vehicle-trip-detail-section"><div class="vehicle-trip-table-heading"><div><h3><i data-lucide="files"></i> CT-es identificados</h3><p>Valores por documento fiscal, quando disponíveis no manifesto.</p></div><span>' +
+            cteRows.length + ' CT-e(s)</span></div>' + (cteRows.length ? '<div class="vehicle-trip-table-wrap"><table class="vehicle-trip-cte-table"><thead><tr><th>CT-e</th><th>Cidade</th><th>Peso (kg)</th><th>QVOL</th><th>Val. frete</th></tr></thead><tbody>' +
+            rowHtml + '</tbody></table></div>' : '<p class="vehicle-trip-no-data">Não foi possível separar os CT-es individuais deste arquivo. Os dados gerais identificados continuam disponíveis acima.</p>') + '</div></section>';
+    }
+
+
+    function renderVehicleTripsPage(showForm = false, viewTripId = null) {
         if (!expensesPage) return;
+
+        if (viewTripId) {
+            const selectedTrip = vehicleTrips.find((trip) => String(trip.id) === String(viewTripId));
+            if (selectedTrip) {
+                expensesPage.innerHTML = renderVehicleTripDetailsMarkup(selectedTrip);
+                bindExpenseButtons();
+                $("[data-trip-action='back-list']", expensesPage)?.addEventListener("click", () => renderVehicleTripsPage(false));
+                refreshIcons();
+                return;
+            }
+        }
 
         const sortedTrips = [...vehicleTrips].sort((a, b) =>
             String(b.tripDate || "").localeCompare(String(a.tripDate || ""))
@@ -931,8 +1067,8 @@ document.addEventListener("DOMContentLoaded", () => {
                             <p class="vehicle-trip-file-name" data-trip-file-name>
                                 Nenhum manifesto selecionado.
                             </p>
-                            <p class="vehicle-trip-import-note">
-                                A leitura automática de fretes e destinos será configurada conforme o formato do manifesto utilizado pela empresa.
+                            <p class="vehicle-trip-import-note" data-trip-import-status>
+                                O PRIME vai identificar CT-es, peso, cidades destinatárias, volumes, valor do frete e manifesto operacional.
                             </p>
                         </div>
 
@@ -972,7 +1108,9 @@ document.addEventListener("DOMContentLoaded", () => {
                                         <i data-lucide="${trip.manifestName ? "file-check-2" : "file"}"></i>
                                         ${trip.manifestName ? "Manifesto: " + escapeHTML(trip.manifestName) : "Manifesto não anexado"}
                                     </span>
+                                    ${trip.manifestData ? `<span class="vehicle-trip-card-summary">${trip.manifestData.totalCtes || "—"} CT-es • ${trip.manifestData.cities?.length || 0} cidades • ${trip.manifestData.operationalManifest || "Manifesto operacional não identificado"}</span>` : ""}
                                 </div>
+                                <button type="button" class="button-secondary vehicle-trip-view-button" data-trip-view="${escapeHTML(trip.id)}"><i data-lucide="eye"></i> VER</button>
                             </article>
                         `).join("")}
                     </div>
@@ -991,7 +1129,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const form = $("#vehicleTripForm", expensesPage);
         const manifestInput = $("[data-trip-manifest]", expensesPage);
         const manifestName = $("[data-trip-file-name]", expensesPage);
+        const importStatus = $("[data-trip-import-status]", expensesPage);
         let selectedManifestName = "";
+        let selectedManifestData = null;
 
         $("[data-trip-action='new']", expensesPage)?.addEventListener("click", () => {
             renderVehicleTripsPage(true);
@@ -1005,11 +1145,47 @@ document.addEventListener("DOMContentLoaded", () => {
             manifestInput?.click();
         });
 
-        manifestInput?.addEventListener("change", () => {
-            selectedManifestName = manifestInput.files?.[0]?.name || "";
-            if (manifestName) {
-                manifestName.textContent = selectedManifestName || "Nenhum manifesto selecionado.";
+        manifestInput?.addEventListener("change", async () => {
+            const file = manifestInput.files?.[0];
+            selectedManifestName = file?.name || "";
+            selectedManifestData = null;
+            if (manifestName) manifestName.textContent = selectedManifestName || "Nenhum manifesto selecionado.";
+            if (!file) return;
+            if (importStatus) importStatus.textContent = "Lendo manifesto e identificando os dados...";
+            const importButton = $("[data-trip-action='import-manifest']", expensesPage);
+            if (importButton) { importButton.disabled = true; importButton.innerHTML = '<i data-lucide="loader-circle"></i> Lendo manifesto...'; }
+            refreshIcons();
+            try {
+                const extractedText = await readManifestFile(file);
+                const parsedData = parseManifestData(extractedText);
+                const foundAnyData = parsedData.totalCtes || parsedData.totalWeight !== null || parsedData.totalVolumes !== null || parsedData.totalFreight !== null || parsedData.operationalManifest || parsedData.cteRows.length;
+                if (!foundAnyData) throw new Error("Não encontrei os campos esperados. Confira se o arquivo contém o texto do manifesto no padrão da Maranata.");
+                selectedManifestData = parsedData;
+                if (importStatus) {
+                    const missing = [];
+                    if (!parsedData.totalCtes) missing.push("QTDE CTe");
+                    if (parsedData.totalWeight === null) missing.push("peso total");
+                    if (!parsedData.cities.length) missing.push("cidades");
+                    if (parsedData.totalVolumes === null) missing.push("QVOL");
+                    if (parsedData.totalFreight === null) missing.push("valor do frete");
+                    if (!parsedData.operationalManifest) missing.push("manifesto operacional");
+                    importStatus.textContent = missing.length ? "Leitura concluída, mas confira os campos não identificados: " + missing.join(", ") + "." : "Manifesto lido com sucesso: " + parsedData.totalCtes + " CT-es, " + parsedData.cities.length + " cidades e manifesto operacional " + parsedData.operationalManifest + ".";
+                }
+                if (parsedData.driver && !form?.elements.driver.value.trim()) form.elements.driver.value = parsedData.driver;
+                if (parsedData.plate && !form?.elements.plate.value.trim()) form.elements.plate.value = parsedData.plate;
+                showToast("Manifesto lido. Confira os dados e salve a viagem.");
+            } catch (error) {
+                console.error("Erro ao ler manifesto:", error);
+                if (importStatus) importStatus.textContent = error.message || "Não foi possível ler este manifesto.";
+                showToast(error.message || "Não foi possível ler o manifesto.");
+            } finally {
+                if (importButton) { importButton.disabled = false; importButton.innerHTML = '<i data-lucide="file-up"></i> Importar manifesto'; }
+                refreshIcons();
             }
+        });
+
+        expensesPage.querySelectorAll("[data-trip-view]").forEach((button) => {
+            button.addEventListener("click", () => renderVehicleTripsPage(false, button.dataset.tripView));
         });
 
         const plateInput = form?.elements.plate;
@@ -1029,6 +1205,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 showToast("Preencha motorista, placa e data da viagem.");
                 return;
             }
+            if (selectedManifestName && !selectedManifestData) {
+                const continueWithoutData = window.confirm("O manifesto foi selecionado, mas não foi possível extrair os dados. Deseja salvar a viagem mesmo assim?");
+                if (!continueWithoutData) return;
+            }
 
             const trip = {
                 id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
@@ -1036,6 +1216,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 plate,
                 tripDate,
                 manifestName: selectedManifestName,
+                manifestData: selectedManifestData,
                 createdAt: new Date().toISOString()
             };
 
