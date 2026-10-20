@@ -1029,11 +1029,15 @@ document.addEventListener("DOMContentLoaded", () => {
                     const field = (label, name, type = "text", placeholder = "", required = false, options = "") => {
                         const requiredAttribute = required ? " required" : "";
                         const numberAttributes = type === "number" ? ' min="0" step="0.01"' : "";
-                        const control = type === "select"
-                            ? `<select name="${name}"${requiredAttribute}>${options}</select>`
-                            : `<input name="${name}" type="${type}"${numberAttributes} placeholder="${placeholder}"${requiredAttribute}>`;
+                        let control = "";
 
-                        return `<label class="form-field">${label}${control}</label>`;
+                        if (type === "select") {
+                            control = '<select name="' + name + '"' + requiredAttribute + '>' + options + '</select>';
+                        } else {
+                            control = '<input name="' + name + '" type="' + type + '"' + numberAttributes + ' placeholder="' + placeholder + '"' + requiredAttribute + '>';
+                        }
+
+                        return '<label class="form-field">' + label + control + '</label>';
                     };
                     let html = "";
                     if (category === "__custom__") {
