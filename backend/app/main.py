@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.api.routes.auth import router as auth_router\nfrom app.api.routes.developer import router as developer_router
+from app.api.routes.auth import router as auth_router
+from app.api.routes.developer import router as developer_router
 from app.core.config import get_settings
 from app.db.session import engine
 
@@ -29,7 +30,8 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Company-ID"],
 )
 
-app.include_router(auth_router, prefix=settings.api_v1_prefix)\napp.include_router(developer_router, prefix=settings.api_v1_prefix)
+app.include_router(auth_router, prefix=settings.api_v1_prefix)
+app.include_router(developer_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health/live", tags=["health"])
