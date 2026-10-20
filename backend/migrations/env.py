@@ -5,8 +5,9 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.config import get_settings
 from app.db.session import Base
+import app.models  # noqa: F401 — registra todos os modelos no metadata do Alembic
 
-# Importar modelos aqui conforme forem implementados para registrar seus metadados.
+
 target_metadata = Base.metadata
 config = context.config
 
