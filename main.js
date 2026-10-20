@@ -167,22 +167,25 @@ document.addEventListener("DOMContentLoaded", () => {
         );
     }
 
+    function getFinalizedTripTotals(month = currentMonth()) {
+        return vehicleTrips.filter((trip) => trip.finalizedAt && monthKey(trip.tripDate) === month).reduce((totals, trip) => {
+            const data = trip.manifestData || {};
+            totals.revenue += Math.max(0, Number(data.totalFreight) || 0);
+            totals.expense += Math.max(0, Number(trip.vehiclePay) || 0);
+            totals.expense += (Array.isArray(trip.extraCosts) ? trip.extraCosts : []).reduce((sum, cost) => sum + Math.max(0, Number(cost.amount) || 0), 0);
+            return totals;
+        }, { revenue: 0, expense: 0 });
+    }
+
     function getMonthlyExpenseTotal(month = currentMonth()) {
-        const ordinaryExpenses = getMonthTransactions(month)
-            .filter((item) => item.type === "expense")
-            .reduce((sum, item) => sum + item.amount, 0);
-
-        const registeredExpenses = getInstallments()
-            .filter((item) => monthKey(item.date) === month)
-            .reduce((sum, item) => sum + item.amount, 0);
-
-        return ordinaryExpenses + registeredExpenses;
+        const ordinaryExpenses = getMonthTransactions(month).filter((item) => item.type === "expense").reduce((sum, item) => sum + item.amount, 0);
+        const registeredExpenses = getInstallments().filter((item) => monthKey(item.date) === month).reduce((sum, item) => sum + item.amount, 0);
+        return ordinaryExpenses + registeredExpenses + getFinalizedTripTotals(month).expense;
     }
 
     function getMonthlyRevenueTotal(month = currentMonth()) {
-        return getMonthTransactions(month)
-            .filter((item) => item.type === "revenue")
-            .reduce((sum, item) => sum + item.amount, 0);
+        const ordinaryRevenue = getMonthTransactions(month).filter((item) => item.type === "revenue").reduce((sum, item) => sum + item.amount, 0);
+        return ordinaryRevenue + getFinalizedTripTotals(month).revenue;
     }
 
     function getTotals(items) {
@@ -204,7 +207,13 @@ document.addEventListener("DOMContentLoaded", () => {
             .filter((item) => item.paid)
             .reduce((sum, item) => sum + item.amount, 0);
 
-        return ordinaryTotals.revenue - ordinaryTotals.expense - paidInstallments;
+        const finalizedTrips = vehicleTrips.filter((trip) => trip.finalizedAt).reduce((totals, trip) => {
+            totals.revenue += Math.max(0, Number(trip.manifestData?.totalFreight) || 0);
+            totals.expense += Math.max(0, Number(trip.vehiclePay) || 0);
+            totals.expense += (Array.isArray(trip.extraCosts) ? trip.extraCosts : []).reduce((sum, cost) => sum + Math.max(0, Number(cost.amount) || 0), 0);
+            return totals;
+        }, { revenue: 0, expense: 0 });
+        return ordinaryTotals.revenue - ordinaryTotals.expense - paidInstallments + finalizedTrips.revenue - finalizedTrips.expense;
     }
 
     function getExpenseCategories() {
@@ -964,12 +973,31 @@ document.addEventListener("DOMContentLoaded", () => {
             plate: plateMatch ? plateMatch[1].toUpperCase() : "", driver: driverMatch ? driverMatch[1].trim() : "",
             cteRows, parsedAt: new Date().toISOString() };
     }
+    function generateVehicleTripReport(trip) {
+        const data = trip.manifestData || {};
+        const costs = Array.isArray(trip.extraCosts) ? trip.extraCosts : [];
+        const vehiclePay = Number(trip.vehiclePay) || 0;
+        const extras = costs.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+        const totalCost = vehiclePay + extras;
+        const revenue = Number(data.totalFreight) || 0;
+        const distance = Number(trip.returnKm) > 0 && Number(trip.startKm) >= 0 ? Number(trip.returnKm) - Number(trip.startKm) : 0;
+        const result = revenue - totalCost;
+        const perKm = (value) => distance > 0 ? money(value / distance) : "—";
+        const costRows = costs.map((item) => '<tr><td>' + escapeHTML(item.date ? dateLabel(item.date) : "—") + '</td><td>' + escapeHTML(item.category || "Outro") + '</td><td>' + escapeHTML([item.location, item.description, item.fuelType, item.liters ? item.liters + " L" : ""].filter(Boolean).join(" • ") || "—") + '</td><td>' + money(Number(item.amount) || 0) + '</td></tr>').join("");
+        const ctes = (data.cteRows || []).map((item) => '<tr><td>' + escapeHTML(item.cte || "—") + '</td><td>' + escapeHTML((item.city || "—") + (item.uf ? "/" + item.uf : "")) + '</td><td>' + (item.weightKg == null ? "—" : formatManifestNumber(item.weightKg, 1)) + '</td><td>' + (item.volumes == null ? "—" : formatManifestNumber(item.volumes, 0)) + '</td><td>' + money(Number(item.freightValue) || 0) + '</td></tr>').join("");
+        const win = window.open("", "_blank");
+        if (!win) { showToast("Permita pop-ups para gerar o relatório PDF."); return; }
+        win.document.write('<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Relatório de viagem PRIME</title><style>body{font:13px Arial;color:#172033;margin:30px}h1{color:#12345a}h2{font-size:16px;border-bottom:1px solid #cbd5e1;padding-bottom:7px;margin-top:24px}.muted{color:#64748b}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:20px 0}.metric{border:1px solid #cbd5e1;border-radius:7px;padding:12px}.metric span{display:block;color:#64748b;font-size:10px;margin-bottom:7px}.metric strong{font-size:15px}table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:8px;border-bottom:1px solid #e2e8f0}th{background:#f1f5f9}@media print{body{margin:12mm}.no-print{display:none}}@media(max-width:650px){.grid{grid-template-columns:repeat(2,1fr)}}</style></head><body><div class="muted">PRIME • RELATÓRIO OPERACIONAL E FINANCEIRO</div><h1>Relatório completo da viagem</h1><p class="muted">Gerado em ' + escapeHTML(dateLabel(localISO())) + '</p><h2>Identificação</h2><p><b>Motorista:</b> ' + escapeHTML(trip.driver || "—") + ' &nbsp; <b>Placa:</b> ' + escapeHTML(trip.plate || "—") + '</p><p><b>Data:</b> ' + escapeHTML(dateLabel(trip.tripDate)) + ' &nbsp; <b>Status:</b> ' + (trip.finalizedAt ? "Finalizada" : "Em andamento") + '</p><p><b>Manifesto:</b> ' + escapeHTML(trip.manifestName || "—") + ' &nbsp; <b>Manifesto operacional:</b> ' + escapeHTML(data.operationalManifest || "—") + '</p><div class="grid"><div class="metric"><span>Receita de frete</span><strong>' + money(revenue) + '</strong></div><div class="metric"><span>Custo total</span><strong>' + money(totalCost) + '</strong></div><div class="metric"><span>Resultado estimado</span><strong>' + money(result) + '</strong></div><div class="metric"><span>KM rodados</span><strong>' + (distance > 0 ? distance.toLocaleString("pt-BR") + " km" : "—") + '</strong></div><div class="metric"><span>Pagamento do veículo</span><strong>' + money(vehiclePay) + '</strong></div><div class="metric"><span>Custos extras</span><strong>' + money(extras) + '</strong></div><div class="metric"><span>Custo por KM</span><strong>' + perKm(totalCost) + '</strong></div><div class="metric"><span>Receita por KM</span><strong>' + perKm(revenue) + '</strong></div></div><h2>Manifesto</h2><p><b>CT-es:</b> ' + escapeHTML(data.totalCtes ?? "—") + ' &nbsp; <b>Peso:</b> ' + (data.totalWeight == null ? "—" : formatManifestNumber(data.totalWeight, 1) + " kg") + ' &nbsp; <b>Volumes:</b> ' + (data.totalVolumes == null ? "—" : formatManifestNumber(data.totalVolumes, 0)) + '</p><p><b>Cidades:</b> ' + escapeHTML((data.cities || []).join(", ") || "—") + '</p><h2>Custos detalhados</h2><table><thead><tr><th>Data</th><th>Categoria</th><th>Descrição</th><th>Valor</th></tr></thead><tbody><tr><td>' + escapeHTML(dateLabel(trip.tripDate)) + '</td><td>Pagamento do veículo</td><td>Pagamento principal</td><td>' + money(vehiclePay) + '</td></tr>' + (costRows || '<tr><td colspan="4">Nenhum custo extra cadastrado.</td></tr>') + '<tr><th colspan="3">TOTAL</th><th>' + money(totalCost) + '</th></tr></tbody></table><h2>CT-es identificados</h2>' + (ctes ? '<table><thead><tr><th>CT-e</th><th>Cidade</th><th>Peso kg</th><th>Volumes</th><th>Frete</th></tr></thead><tbody>' + ctes + '</tbody></table>' : '<p>Não há dados individuais de CT-es disponíveis.</p>') + '<p class="muted">Relatório gerado pelo PRIME com base nos dados cadastrados.</p><div class="no-print"><button onclick="window.print()">Imprimir / Salvar como PDF</button></div><script>window.onload=()=>setTimeout(()=>window.print(),300);<\/script></body></html>');
+        win.document.close();
+    }
+
     function renderVehicleTripDetailsMarkup(trip) {
         const data = trip.manifestData || {};
         const dash = (value) => value === null || value === undefined || value === "" ? "—" : escapeHTML(String(value));
         const cteRows = Array.isArray(data.cteRows) ? data.cteRows : [];
         const cities = Array.isArray(data.cities) ? data.cities : [];
         const costs = Array.isArray(trip.extraCosts) ? trip.extraCosts : [];
+        const isFinalized = Boolean(trip.finalizedAt);
         const totalExtras = costs.reduce((sum, cost) => sum + (Number(cost.amount) || 0), 0);
         const vehiclePay = Number(trip.vehiclePay) || 0;
         const tripKm = Number(trip.returnKm) > 0 && Number(trip.startKm) >= 0 ? Number(trip.returnKm) - Number(trip.startKm) : 0;
@@ -981,11 +1009,11 @@ document.addEventListener("DOMContentLoaded", () => {
         const cityHtml = cities.length ? '<div class="vehicle-trip-city-list">' + cities.map((city) => '<span>' + escapeHTML(city) + '</span>').join("") + '</div>' : '<p class="vehicle-trip-no-data">Nenhuma cidade foi identificada no manifesto.</p>';
         const rowHtml = cteRows.map((row) => '<tr><td>' + escapeHTML(row.cte) + '</td><td>' + escapeHTML(row.city + (row.uf ? "/" + row.uf : "")) + '</td><td>' + (row.weightKg == null ? "—" : formatManifestNumber(row.weightKg, 1)) + '</td><td>' + (row.volumes == null ? "—" : formatManifestNumber(row.volumes, 0)) + '</td><td>' + (row.freightValue == null ? "—" : "R$ " + formatManifestNumber(row.freightValue, 2)) + '</td></tr>').join("");
         const costRows = costs.length ? costs.map((cost) => '<div class="vehicle-trip-cost-row"><div><strong>' + escapeHTML(cost.category || "Outro custo") + '</strong><span>' + escapeHTML([cost.location, cost.fuelType, cost.liters ? cost.liters + " L" : "", cost.km ? "KM " + cost.km : "", cost.description].filter(Boolean).join(" • ")) + '</span></div><strong>' + money(Number(cost.amount) || 0) + '</strong><button type="button" class="button-secondary" data-cost-delete="' + escapeHTML(cost.id) + '" aria-label="Excluir custo extra"><i data-lucide="trash-2"></i></button></div>').join("") : '<p class="vehicle-trip-no-data">Nenhum custo extra cadastrado nesta viagem.</p>';
-        return '<div class="expenses-page-header"><div class="eyebrow">GESTÃO FINANCEIRA / VEÍCULOS / VIAGENS</div><h1>Detalhes da viagem<span class="blue-period">.</span></h1><p>Dados cadastrais, custos e informações extraídas do manifesto.</p><div class="vehicle-trips-toolbar"><button type="button" class="button-secondary" data-trip-action="back-list"><i data-lucide="arrow-left"></i> Voltar para viagens</button><button type="button" class="button-danger" data-trip-action="delete-trip"><i data-lucide="trash-2"></i> Excluir viagem</button></div></div>' +
+        return '<div class="expenses-page-header"><div class="eyebrow">GESTÃO FINANCEIRA / VEÍCULOS / VIAGENS</div><h1>Detalhes da viagem<span class="blue-period">.</span></h1><p>Dados cadastrais, custos e informações extraídas do manifesto.</p><div class="vehicle-trips-toolbar"><button type="button" class="button-secondary" data-trip-action="back-list"><i data-lucide="arrow-left"></i> Voltar para viagens</button>' + (isFinalized ? '<span class="vehicle-trip-status-finalized">Viagem finalizada</span>' : '<button type="button" class="button-primary" data-trip-action="finalize-trip"><i data-lucide="check-circle"></i> Finalizar viagem</button>') + '<button type="button" class="button-secondary" data-trip-action="trip-report"><i data-lucide="file-down"></i> Relatório PDF</button><button type="button" class="button-danger" data-trip-action="delete-trip"><i data-lucide="trash-2"></i> Excluir viagem</button></div></div>' +
         '<section class="vehicle-trip-details-panel"><div class="vehicle-trip-details-heading"><div><span class="vehicle-trip-detail-kicker">DADOS DA VIAGEM</span><h2>' + escapeHTML(trip.driver || "Motorista não informado") + '</h2><p>Placa: ' + escapeHTML(trip.plate || "—") + ' <span>•</span> Data: ' + escapeHTML(dateLabel(trip.tripDate)) + '</p></div><span class="vehicle-trip-details-file"><i data-lucide="file-check-2"></i> ' + escapeHTML(trip.manifestName || "Manifesto não anexado") + '</span></div><div class="vehicle-trip-metrics">' + metricHtml + '</div><div class="vehicle-trip-detail-section"><h3><i data-lucide="map-pin"></i> Cidades destinatárias</h3>' + cityHtml + '</div><div class="vehicle-trip-detail-section vehicle-trip-operational-code"><h3><i data-lucide="file-text"></i> Manifesto operacional</h3><strong>' + dash(data.operationalManifest) + '</strong></div>' +
         '<section class="vehicle-trip-detail-section"><div class="vehicle-trip-table-heading"><div><h3><i data-lucide="files"></i> CT-es identificados</h3><p>Expanda somente quando precisar conferir os documentos.</p></div><span>' + cteRows.length + ' CT-e(s)</span></div><details class="vehicle-trip-cte-disclosure"><summary>Ver CT-es identificados</summary>' + (cteRows.length ? '<div class="vehicle-trip-table-wrap"><table class="vehicle-trip-cte-table"><thead><tr><th>CT-e</th><th>Cidade</th><th>Peso (kg)</th><th>QVOL</th><th>Val. frete</th></tr></thead><tbody>' + rowHtml + '</tbody></table></div>' : '<p class="vehicle-trip-no-data">Não foi possível separar os CT-es individuais deste arquivo. Os dados gerais identificados continuam disponíveis acima.</p>') + '</details></section>' +
-        '<section class="vehicle-trip-detail-section"><h3><i data-lucide="gauge"></i> Quilometragem e pagamento do veículo</h3><form id="tripCostsForm" class="vehicle-trip-cost-form"><label class="form-field">Valor pago ao veículo (R$)<input type="number" name="vehiclePay" min="0" step="0.01" value="' + (trip.vehiclePay ?? "") + '" placeholder="0,00"></label><label class="form-field">KM de saída<input type="number" name="startKm" min="0" step="1" value="' + (trip.startKm ?? "") + '" placeholder="Ex.: 125000"></label><label class="form-field">KM de retorno<input type="number" name="returnKm" min="0" step="1" value="' + (trip.returnKm ?? "") + '" placeholder="Ex.: 125650"></label><div class="vehicle-trip-cost-form-actions"><button class="button-primary" type="submit"><i data-lucide="save"></i> Salvar dados</button></div></form><div class="vehicle-trip-cost-summary"><div><span>Distância percorrida</span><strong>' + (tripKm > 0 ? formatManifestNumber(tripKm, 0) + ' km' : '—') + '</strong></div><div><span>Custos extras</span><strong>' + money(totalExtras) + '</strong></div><div><span>Custo total registrado</span><strong>' + money(totalCost) + '</strong></div><div><span>Resultado estimado do frete</span><strong>' + money(result) + '</strong></div></div></section>' +
-        '<section class="vehicle-trip-detail-section"><div class="vehicle-trip-table-heading"><div><h3><i data-lucide="receipt-text"></i> Custos extras da viagem</h3><p>Abastecimentos, diárias, manutenção e outros custos.</p></div><button type="button" class="button-primary" data-trip-action="add-cost"><i data-lucide="plus"></i> Add custo extra</button></div><div class="vehicle-trip-cost-list">' + costRows + '</div><form id="extraCostForm" class="vehicle-trip-extra-form" hidden><h3>Novo custo extra</h3><label class="form-field">Tipo de custo<select name="category" required><option value="Combustível">Combustível</option><option value="Diária">Diária</option><option value="Manutenção">Manutenção</option><option value="Pedágio">Pedágio</option><option value="Estacionamento">Estacionamento</option><option value="Alimentação">Alimentação</option><option value="Hospedagem">Hospedagem</option><option value="Outro">Outro</option><option value="__custom__">+ Cadastrar novo tipo de custo</option></select></label><div class="extra-cost-fields" data-extra-fields></div><div class="vehicle-trip-form-actions"><button type="button" class="button-secondary" data-trip-action="cancel-cost">Cancelar</button><button type="submit" class="button-primary"><i data-lucide="save"></i> Salvar custo</button></div></form></section></section>';
+        '<section class="vehicle-trip-detail-section"><h3><i data-lucide="gauge"></i> Quilometragem e pagamento do veículo</h3>' + (isFinalized ? '<p class="vehicle-trip-locked-note">Esta viagem foi finalizada. Os dados estão bloqueados para edição.</p>' : '') + '<form id="tripCostsForm" class="vehicle-trip-cost-form"' + (isFinalized ? ' hidden' : '') + '><label class="form-field">Valor pago ao veículo (R$)<input type="number" name="vehiclePay" min="0" step="0.01" value="' + (trip.vehiclePay ?? "") + '" placeholder="0,00"></label><label class="form-field">KM de saída<input type="number" name="startKm" min="0" step="1" value="' + (trip.startKm ?? "") + '" placeholder="Ex.: 125000"></label><label class="form-field">KM de retorno<input type="number" name="returnKm" min="0" step="1" value="' + (trip.returnKm ?? "") + '" placeholder="Ex.: 125650"></label><div class="vehicle-trip-cost-form-actions"><button class="button-primary" type="submit"><i data-lucide="save"></i> Salvar dados</button></div></form><div class="vehicle-trip-cost-summary"><div><span>Distância percorrida</span><strong>' + (tripKm > 0 ? formatManifestNumber(tripKm, 0) + ' km' : '—') + '</strong></div><div><span>Custos extras</span><strong>' + money(totalExtras) + '</strong></div><div><span>Custo total registrado</span><strong>' + money(totalCost) + '</strong></div><div><span>Resultado estimado do frete</span><strong>' + money(result) + '</strong></div></div></section>' +
+        '<section class="vehicle-trip-detail-section"><div class="vehicle-trip-table-heading"><div><h3><i data-lucide="receipt-text"></i> Custos extras da viagem</h3><p>Abastecimentos, diárias, manutenção e outros custos.</p></div>' + (isFinalized ? '' : '<button type="button" class="button-primary" data-trip-action="add-cost"><i data-lucide="plus"></i> Add custo extra</button>') + '</div><div class="vehicle-trip-cost-list">' + costRows + '</div><form id="extraCostForm" class="vehicle-trip-extra-form" hidden><h3>Novo custo extra</h3><label class="form-field">Tipo de custo<select name="category" required><option value="Combustível">Combustível</option><option value="Diária">Diária</option><option value="Manutenção">Manutenção</option><option value="Pedágio">Pedágio</option><option value="Estacionamento">Estacionamento</option><option value="Alimentação">Alimentação</option><option value="Hospedagem">Hospedagem</option><option value="Outro">Outro</option><option value="__custom__">+ Cadastrar novo tipo de custo</option></select></label><div class="extra-cost-fields" data-extra-fields></div><div class="vehicle-trip-form-actions"><button type="button" class="button-secondary" data-trip-action="cancel-cost">Cancelar</button><button type="submit" class="button-primary"><i data-lucide="save"></i> Salvar custo</button></div></form></section></section>';
     }
 
 
@@ -1006,9 +1034,21 @@ document.addEventListener("DOMContentLoaded", () => {
                     showToast("Viagem excluída com sucesso.");
                     renderVehicleTripsPage(false);
                 });
+                $("[data-trip-action='finalize-trip']", expensesPage)?.addEventListener("click", () => {
+                    if (!(Number(selectedTrip.manifestData?.totalFreight) > 0)) { showToast("Informe um valor de frete válido no manifesto antes de finalizar."); return; }
+                    if (!window.confirm("Finalizar esta viagem? Os valores serão contabilizados no dashboard e não poderão mais ser alterados.")) return;
+                    const oldValue = selectedTrip.finalizedAt;
+                    selectedTrip.finalizedAt = new Date().toISOString();
+                    if (!persistVehicleTrips()) { selectedTrip.finalizedAt = oldValue; return; }
+                    updateDashboard();
+                    showToast("Viagem finalizada e contabilizada no dashboard.");
+                    renderVehicleTripsPage(false, selectedTrip.id);
+                });
+                $("[data-trip-action='trip-report']", expensesPage)?.addEventListener("click", () => generateVehicleTripReport(selectedTrip));
                 const tripCostsForm = $("#tripCostsForm", expensesPage);
                 tripCostsForm?.addEventListener("submit", (event) => {
                     event.preventDefault();
+                    if (selectedTrip.finalizedAt) { showToast("Esta viagem está finalizada e bloqueada."); return; }
                     const fd = new FormData(tripCostsForm);
                     const startKm = fd.get("startKm") === "" ? null : Number(fd.get("startKm"));
                     const returnKm = fd.get("returnKm") === "" ? null : Number(fd.get("returnKm"));
@@ -1079,6 +1119,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 $("[data-trip-action='cancel-cost']", expensesPage)?.addEventListener("click", () => { if (extraCostForm) { extraCostForm.reset(); extraCostForm.hidden = true; } });
                 extraCostForm?.addEventListener("submit", (event) => {
                     event.preventDefault();
+                    if (selectedTrip.finalizedAt) { showToast("Esta viagem está finalizada e bloqueada."); return; }
                     const fd = new FormData(extraCostForm);
                     const amount = Number(fd.get("amount")) || 0;
                     if (amount <= 0) { showToast("Informe um valor pago maior que zero."); return; }
@@ -1092,6 +1133,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     renderVehicleTripsPage(false, selectedTrip.id);
                 });
                 expensesPage.querySelectorAll("[data-cost-delete]").forEach((button) => button.addEventListener("click", () => {
+                    if (selectedTrip.finalizedAt) { showToast("Esta viagem está finalizada e bloqueada."); return; }
                     if (!window.confirm("Excluir este custo extra?")) return;
                     selectedTrip.extraCosts = (selectedTrip.extraCosts || []).filter((cost) => String(cost.id) !== String(button.dataset.costDelete));
                     if (!persistVehicleTrips()) return;
@@ -1202,6 +1244,7 @@ document.addEventListener("DOMContentLoaded", () => {
                                     <strong>${escapeHTML(trip.driver)}</strong>
                                     <span>Placa: ${escapeHTML(trip.plate)}</span>
                                     <span>Data: ${dateLabel(trip.tripDate)}</span>
+                                    ${trip.finalizedAt ? '<span class="vehicle-trip-status-finalized">Finalizada</span>' : '<span class="vehicle-trip-status-open">Em andamento</span>'}
                                     <span class="vehicle-trip-manifest-status">
                                         <i data-lucide="${trip.manifestName ? "file-check-2" : "file"}"></i>
                                         ${trip.manifestName ? "Manifesto: " + escapeHTML(trip.manifestName) : "Manifesto não anexado"}
