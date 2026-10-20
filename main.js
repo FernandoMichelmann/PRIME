@@ -3346,6 +3346,48 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const profileButton = $("#profileButton");
 
+    // Atualiza o cabeçalho com o nome e o cargo do perfil administrativo ativo.
+    // Até existir autenticação, o PRIME não consegue identificar uma sessão individual.
+    function updateHeaderUser() {
+        if (!window.PRIMEUsers || typeof window.PRIMEUsers.getUsers !== "function") return;
+
+        const registeredUsers = window.PRIMEUsers.getUsers();
+        const activeUsers = registeredUsers.filter((user) => user.status === "Ativo");
+        const displayUser =
+            activeUsers.find((user) => user.role === "Administrador") ||
+            activeUsers[0] ||
+            registeredUsers.find((user) => user.role === "Administrador") ||
+            registeredUsers[0];
+
+        if (!displayUser || !profileButton) return;
+
+        const avatar = profileButton.querySelector(".avatar");
+        const name = profileButton.querySelector(".profile-info strong");
+        const position = profileButton.querySelector(".profile-info span");
+
+        const initials = String(displayUser.fullName || "Usuário")
+            .trim()
+            .split(/\\s+/)
+            .filter(Boolean)
+            .slice(0, 2)
+            .map((part) => part.charAt(0))
+            .join("")
+            .toUpperCase();
+
+        if (avatar) avatar.textContent = initials || "US";
+        if (name) name.textContent = displayUser.fullName || displayUser.username || "Usuário";
+        if (position) position.textContent = displayUser.position || displayUser.role || "Cargo não informado";
+        profileButton.setAttribute(
+            "aria-label",
+            "Usuário: " + (displayUser.fullName || displayUser.username || "Usuário") +
+            ". Cargo: " + (displayUser.position || displayUser.role || "Cargo não informado") +
+            ". Abrir cadastro de usuários"
+        );
+    }
+
+    updateHeaderUser();
+    window.addEventListener("prime:users-updated", updateHeaderUser);
+
     function openUserManagementFromProfile() {
         setActiveNavigation("Cadastros");
         closeSidebar();
