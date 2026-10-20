@@ -2676,3 +2676,99 @@ tbody tr:hover {
         transition: none;
     }
 }
+
+/* =========================================
+   PRIME — FILTROS DE STATUS DAS DESPESAS
+========================================= */
+
+.expense-status-filters {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 14px 20px;
+    background: #0B1524;
+    border-bottom: 1px solid var(--border);
+}
+
+.expense-filter-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 34px;
+    padding: 0 11px;
+    color: #A9B8CB;
+    background: #0D1929;
+    border: 1px solid #24344B;
+    border-radius: 6px;
+    font: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 150ms ease, background 150ms ease, border-color 150ms ease;
+}
+
+.expense-filter-button:hover {
+    color: #EAF2FF;
+    background: #12233A;
+    border-color: #355579;
+}
+
+.expense-filter-button.active {
+    color: #EAF3FF;
+    background: #15345A;
+    border-color: #3679EF;
+    box-shadow: inset 0 0 0 1px #3679EF22;
+}
+
+.expense-filter-button svg {
+    width: 13px;
+    height: 13px;
+}
+
+.expense-filter-button span {
+    display: inline-grid;
+    place-items: center;
+    min-width: 19px;
+    height: 19px;
+    padding: 0 5px;
+    color: #B8C7DB;
+    background: #1B2A40;
+    border-radius: 4px;
+    font-size: 9px;
+    font-variant-numeric: tabular-nums;
+}
+
+.expense-filter-button.active span {
+    color: #FFFFFF;
+    background: #28558D;
+}
+
+.variable-expenses-filter-empty {
+    padding-top: 34px;
+    padding-bottom: 34px;
+}
+
+@media (max-width: 600px) {
+    .expense-status-filters {
+        gap: 7px;
+        padding: 12px;
+    }
+
+    .expense-filter-button {
+        flex: 1 1 calc(50% - 7px);
+        min-width: 0;
+        padding: 0 8px;
+        font-size: 9px;
+    }
+
+    .variable-expenses-panel-heading {
+        align-items: flex-start;
+        padding: 16px 12px;
+    }
+
+    .variable-expenses-count {
+        white-space: nowrap;
+    }
+}
