@@ -14,7 +14,7 @@
     function save(){ try { localStorage.setItem(KEY,JSON.stringify(data)); window.dispatchEvent(new CustomEvent("prime:payroll-updated")); return true; } catch(e){ console.error(e); alert("Não foi possível salvar. Verifique o armazenamento do navegador."); return false; } }
     const active = () => data.employees.filter(e=>e.status==="ativo");
     const period = () => data.periods.find(p=>p.month===month);
-    const costOf = p => (p?.items||[]).reduce((s,i)=>s+Math.max(0,Number(i.amount)||0),0);
+    const costOf = p => (p?.items||[]).filter(i=>i.kind!=="desconto").reduce((s,i)=>s+Math.max(0,Number(i.amount)||0),0);
     const monthCost = m => data.periods.filter(p=>p.month===m&&["aprovada","parcial","paga","fechada"].includes(p.status)).reduce((s,p)=>s+costOf(p),0);
     const paidTotal = () => data.payments.filter(p=>p.status==="pago").reduce((s,p)=>s+Number(p.amount||0),0);
     const paidInMonth = m => data.payments.filter(p=>p.status==="pago"&&String(p.paidAt||"").slice(0,7)===m).reduce((s,p)=>s+Number(p.amount||0),0);
