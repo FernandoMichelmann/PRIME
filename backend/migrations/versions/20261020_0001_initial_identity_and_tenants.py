@@ -32,8 +32,6 @@ def upgrade() -> None:
         sa.UniqueConstraint("cnpj", name="uq_companies_cnpj"),
         sa.UniqueConstraint("slug", name="uq_companies_slug"),
     )
-    op.create_index("ix_companies_slug", "companies", ["slug"], unique=False)
-
     op.create_table(
         "users",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
@@ -48,8 +46,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("email", name="uq_users_email"),
     )
-    op.create_index("ix_users_email", "users", ["email"], unique=True)
-
     op.create_table(
         "roles",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
@@ -139,8 +135,6 @@ def downgrade() -> None:
     op.drop_table("permissions")
     op.drop_table("roles")
 
-    op.drop_index("ix_users_email", table_name="users")
     op.drop_table("users")
 
-    op.drop_index("ix_companies_slug", table_name="companies")
     op.drop_table("companies")
