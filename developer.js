@@ -3,7 +3,7 @@
   const API_BASE = "http://127.0.0.1:8000/api/v1";
   const $ = (s) => document.querySelector(s);
   let token = sessionStorage.getItem("primeDeveloperToken") || "";
-  let currentUser = null;
+  let currentUser = null;\n  let selectedCompanyId = null;
   const escapeHTML = (v) => String(v ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
   async function api(path, options = {}) {
     const response = await fetch(API_BASE + path, {
@@ -47,6 +47,12 @@
       <span class="company-status ${c.is_active ? "active" : "inactive"}">${c.is_active ? "Ativa" : "Inativa"}</span></div>
       <div class="developer-company-actions"><button class="button-secondary" data-toggle-company="${c.id}" data-active="${c.is_active}">${c.is_active ? "Desativar empresa" : "Reativar empresa"}</button></div>
     </article>`).join("");
+    list.querySelectorAll("[data-create-admin]").forEach(btn => btn.addEventListener("click", () => {
+      selectedCompanyId = btn.dataset.createAdmin;
+      $("#adminCompanyName").textContent = btn.dataset.companyName;
+      $("#adminForm").reset(); message("#adminMessage", "");
+      $("#adminDialog").showModal();
+    }));
     list.querySelectorAll("[data-toggle-company]").forEach(btn => btn.addEventListener("click", async () => {
       const desired = btn.dataset.active !== "true";
       const action = desired ? "reativar" : "desativar";
@@ -77,6 +83,19 @@
       form.reset(); await loadCompanies();
       message("#companyMessage",`Transportadora cadastrada. Administrador: ${created.admin_email}. Guarde a senha com segurança e não a compartilhe por canais inseguros.`,"success");
     } catch(e) { message("#companyMessage",e.message,"error"); }
+    finally { button.disabled = false; }
+  });
+  $("#closeAdminDialog").addEventListener("click", () => $("#adminDialog").close());
+  $("#adminForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!selectedCompanyId) return;
+    const form = event.currentTarget; const button = form.querySelector('button[type="submit"]');
+    const data = Object.fromEntries(new FormData(form)); button.disabled = true;
+    try {
+      await api(`/developer/companies/${selectedCompanyId}/admins`, {method:"POST", body:JSON.stringify(data)});
+      $("#adminDialog").close(); form.reset();
+      message("#globalMessage", "Administrador criado com sucesso.", "success");
+    } catch(e) { message("#adminMessage", e.message, "error"); }
     finally { button.disabled = false; }
   });
   $("#refreshButton").addEventListener("click", async () => { try { await loadCompanies(); message("#globalMessage","Lista atualizada.","success"); } catch(e) { message("#globalMessage",e.message,"error"); } });
