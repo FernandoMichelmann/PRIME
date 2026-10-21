@@ -165,7 +165,7 @@ from app.schemas.payroll_records import (
 
 
 def _validate_period_items(items: list[dict], company_id, db: Session) -> None:
-    employee_ids = {str(item["employee_id"]) for item in items}
+    employee_ids = {UUID(str(item["employee_id"])) for item in items}
     if not employee_ids:
         return
     employees = db.scalars(
@@ -174,7 +174,7 @@ def _validate_period_items(items: list[dict], company_id, db: Session) -> None:
             PayrollEmployee.id.in_(employee_ids),
         )
     ).all()
-    if {str(employee.id) for employee in employees} != employee_ids:
+    if {employee.id for employee in employees} != employee_ids:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Uma ou mais rubricas apontam para funcionários inexistentes nesta transportadora.",
