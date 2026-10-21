@@ -26,7 +26,7 @@ document.addEventListener("DOMContentLoaded", () => {
         String(date.getDate()).padStart(2, "0")
     ].join("-");
 
-    const todayISO = localISO();
+    let todayISO = localISO();
     const currentMonth = () => localISO().slice(0, 7);
     const monthKey = (date) => String(date || "").slice(0, 7);
     const STORAGE_KEY = "primeVariableExpensesV1";
@@ -3590,4 +3590,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     updateDashboard();
     refreshIcons();
+
+    function refreshAtNextDay() {
+        const now = new Date();
+        const nextDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
+        window.setTimeout(() => {
+            todayISO = localISO();
+            updateDashboard();
+            refreshAtNextDay();
+        }, Math.max(1000, nextDay.getTime() - now.getTime()));
+    }
+
+    refreshAtNextDay();
 });
