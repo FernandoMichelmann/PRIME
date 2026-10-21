@@ -294,6 +294,13 @@ def create_payroll_payment(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if payload.source_item_id:
+        existing = db.scalar(select(PayrollPayment).where(
+            PayrollPayment.company_id == membership.company_id,
+            PayrollPayment.source_item_id == payload.source_item_id,
+        ))
+        if existing is not None:
+            return existing
     employee = db.scalar(select(PayrollEmployee).where(
         PayrollEmployee.id == payload.employee_id,
         PayrollEmployee.company_id == membership.company_id,
