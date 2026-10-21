@@ -92,6 +92,16 @@ def update_employee(
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(employee, field, value)
 
+    if employee.salary_split and (
+        (employee.salary_day5_amount + employee.salary_day20_amount).quantize(__import__("decimal").Decimal("0.01"))
+        != employee.salary.quantize(__import__("decimal").Decimal("0.01"))
+    ):
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A soma das parcelas do 5º dia útil e do dia 20 deve ser igual à remuneração mensal.",
+        )
+
     try:
         db.add(
             AuditLog(
