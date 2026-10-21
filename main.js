@@ -35,6 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let cashflowChart;
     let expensesChart;
     let expensesPage = null;
+    let revenuePage = null;
     let expenseFormDraft = null;
     let variableExpenseFilter = "all";
     const VEHICLE_TRIPS_STORAGE_KEY = "primeVehicleTripsV1";
@@ -747,6 +748,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (expensesPage) {
             expensesPage.hidden = true;
         }
+        if (revenuePage) {
+            revenuePage.hidden = true;
+        }
 
         originalContent.forEach((element) => {
             element.hidden = false;
@@ -764,6 +768,25 @@ document.addEventListener("DOMContentLoaded", () => {
             behavior: "smooth",
             block: "start"
         });
+    }
+
+    function showRevenuePage() {
+        if (!content || !window.PRIMERevenue) {
+            showToast("O módulo Receitas não foi carregado. Atualize a página e tente novamente.");
+            return;
+        }
+        if (!revenuePage) {
+            revenuePage = document.createElement("section");
+            revenuePage.id = "revenuePage";
+            revenuePage.hidden = true;
+            content.appendChild(revenuePage);
+        }
+        originalContent.forEach((element) => { element.hidden = true; });
+        if (expensesPage) expensesPage.hidden = true;
+        revenuePage.hidden = false;
+        if ($("#currentPage")) $("#currentPage").textContent = "Receitas";
+        window.PRIMERevenue.render(revenuePage);
+        window.scrollTo({ top: 0, behavior: "smooth" });
     }
 
     // --------------------------------------------------
@@ -3239,6 +3262,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
             if (pageName === "Despesas") {
                 showExpensesPage();
+                return;
+            }
+
+            if (pageName === "Receitas") {
+                showRevenuePage();
                 return;
             }
 
