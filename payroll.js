@@ -212,10 +212,14 @@
             const {items,employee,date,total,sent,pending}=row;
             const base=items.find(i=>i.source==="salary_auto")||items[0];
             const descriptions=items.map(i=>i.description);
-            const showExtra=!sent&&Boolean(base);
             const groupIds=pending.map(i=>i.id).join(",");
-            return '<tr><td><strong>'+esc(employee?.name||"Colaborador")+'</strong><small>'+esc(employee?.role||employee?.department||"")+'</small></td><td>'+descriptions.map(esc).join(" + ")+'</td><td>'+formatFullDate(date)+'</td><td>'+money(total)+'</td><td>'+(sent?"Enviado para pagamento":pending.length<items.length?"Parcialmente enviado":"Previsto — não aprovado")+'</td><td><div style="display:flex;gap:6px;flex-wrap:wrap">'+(showExtra?'<button type="button" class="button-secondary payroll-small-button" data-p-extra-toggle="'+esc(base.id)+'">Adicionar custo extra</button>':'')+(!sent?'<button type="button" class="button-primary payroll-small-button" data-p-send-group="'+esc(groupIds)+'">Aprovar e enviar para pagamento</button>':'')+'</div></td></tr>'+
-            (showExtra?'<tr><td colspan="6"><form class="payroll-form" data-p-extra-form="'+esc(base.id)+'" style="display:none;padding:12px"><label>Tipo de custo<select name="category" required><option value="VR">VR</option><option value="VA">VA</option><option value="AUX MERCADO">Auxílio mercado</option><option value="AUX FARMÁCIA">Auxílio farmácia</option><option value="OUTROS">Outros</option></select></label><label>Valor extra (R$)<input name="amount" type="number" min="0.01" step="0.01" required></label><label data-extra-description-wrap style="display:none">Descreva o custo<input name="description" maxlength="120" placeholder="Descreva o custo"></label><div class="payroll-form-actions"><button type="submit" class="button-primary">Adicionar custo extra</button></div></form></td></tr>':"");
+            const editable=items.some(i=>!i.paymentId&&!i.approved);
+            return '<tr><td><strong>'+esc(employee?.name||"Colaborador")+'</strong><small>'+esc(employee?.role||employee?.department||"")+'</small></td><td>'+descriptions.map(esc).join(" + ")+'</td><td>'+formatFullDate(date)+'</td><td>'+money(total)+'</td><td>'+(sent?"Enviado para pagamento":pending.length<items.length?"Parcialmente enviado":"Previsto — não aprovado")+'</td><td><div style="display:flex;gap:6px;flex-wrap:wrap">'+(editable?'<button type="button" class="button-secondary payroll-small-button" data-p-extra-toggle="'+esc(base.id)+'">Adicionar custo extra</button><button type="button" class="button-primary payroll-small-button" data-p-send-group="'+esc(groupIds)+'">Aprovar e enviar para pagamento</button>':'')+'<button type="button" class="button-secondary payroll-small-button" data-p-edit-toggle="'+esc(base.id)+'">Editar</button></div></td></tr>'+
+            '<tr><td colspan="6"><form class="payroll-form" data-p-edit-form="'+esc(base.id)+'" style="display:none;padding:14px"><strong>Editar valores — '+esc(employee?.name||"Colaborador")+'</strong>'+items.map(i=>{
+                const canEdit=!i.paymentId&&!i.approved;
+                return '<div style="display:grid;grid-template-columns:minmax(140px,1fr) minmax(120px,180px) auto;gap:10px;align-items:end;margin-top:10px"><label>'+esc(i.description)+'<input type="number" min="0" step="0.01" name="amount-'+esc(i.id)+'" value="'+esc(i.amount)+'" '+(canEdit?'':'disabled')+'></label><span class="payroll-muted" style="padding-bottom:10px">'+(i.source==="extra_cost"?"Custo extra":"Salário")+(canEdit?"":" · já enviado")+'</span>'+(i.source==="extra_cost"&&canEdit?'<button type="button" class="button-secondary payroll-small-button" data-p-delete-extra="'+esc(i.id)+'">Excluir custo</button>':'')+'</div>';
+            }).join("")+'<div class="payroll-form-actions"><button type="submit" class="button-primary" '+(editable?'':'disabled')+'>Salvar alterações</button><button type="button" class="button-secondary" data-p-edit-cancel="'+esc(base.id)+'">Fechar</button></div><p class="payroll-muted">Só é possível alterar ou excluir valores que ainda não foram enviados para pagamento.</p></form></td></tr>'+
+            (!sent&&base?'<tr><td colspan="6"><form class="payroll-form" data-p-extra-form="'+esc(base.id)+'" style="display:none;padding:12px"><label>Tipo de custo<select name="category" required><option value="VR">VR</option><option value="VA">VA</option><option value="AUX MERCADO">Auxílio mercado</option><option value="AUX FARMÁCIA">Auxílio farmácia</option><option value="OUTROS">Outros</option></select></label><label>Valor extra (R$)<input name="amount" type="number" min="0.01" step="0.01" required></label><label data-extra-description-wrap style="display:none">Descreva o custo<input name="description" maxlength="120" placeholder="Descreva o custo"></label><div class="payroll-form-actions"><button type="submit" class="button-primary">Adicionar custo extra</button></div></form></td></tr>':"");
         }).join("")+'</tbody></table></div>':'<div class="payroll-empty">Nenhum funcionário tem parcela prevista neste ciclo.</div>')+
 '</div>';
     }
@@ -330,6 +334,38 @@
         });
         host.querySelectorAll("[data-p-extra-toggle]").forEach(b=>b.addEventListener("click",()=>{
             const form=host.querySelector('[data-p-extra-form="'+CSS.escape(b.dataset.pExtraToggle)+'"]');if(form)form.style.display=form.style.display==="none"?"":"none";
+        }));
+        host.querySelectorAll("[data-p-edit-toggle]").forEach(b=>b.addEventListener("click",()=>{
+            const form=host.querySelector('[data-p-edit-form="'+CSS.escape(b.dataset.pEditToggle)+'"]');if(form)form.style.display=form.style.display==="none"?"":"none";
+        }));
+        host.querySelectorAll("[data-p-edit-cancel]").forEach(b=>b.addEventListener("click",()=>{
+            const form=host.querySelector('[data-p-edit-form="'+CSS.escape(b.dataset.pEditCancel)+'"]');if(form)form.style.display="none";
+        }));
+        host.querySelectorAll("[data-p-delete-extra]").forEach(b=>b.addEventListener("click",async()=>{
+            const current=period(),id=b.dataset.pDeleteExtra,item=current?.items.find(i=>String(i.id)===String(id));
+            if(!current||!item||item.source!=="extra_cost"||item.approved||item.paymentId||!window.PRIMEAuth)return;
+            if(!confirm("Excluir o custo extra '"+item.description+"' ("+money(item.amount)+")?"))return;
+            try{
+                const items=current.items.filter(i=>String(i.id)!==String(id)).map(i=>({id:i.id,employee_id:i.employeeId,description:i.description,kind:i.kind,amount:i.amount,created_at:i.createdAt||null,due_date:i.dueDate||null,source:i.source||"manual",approved:Boolean(i.approved),payment_id:i.paymentId||null,extra_category:i.extraCategory||null}));
+                await window.PRIMEAuth.requestCompany("/payroll/periods/"+encodeURIComponent(current.id),{method:"PATCH",body:JSON.stringify({items})});await syncRemoteRecords();draw();
+            }catch(error){alert(error.message||"Não foi possível excluir o custo extra.");}
+        }));
+        host.querySelectorAll("[data-p-edit-form]").forEach(form=>form.addEventListener("submit",async e=>{
+            e.preventDefault();const current=period();if(!current||!window.PRIMEAuth)return;
+            const fd=new FormData(form),ids=[...form.querySelectorAll('input[name^="amount-"]')].map(input=>input.name.slice(7));
+            const changed=[];
+            for(const id of ids){
+                const item=current.items.find(i=>String(i.id)===String(id)),input=form.querySelector('[name="amount-'+CSS.escape(id)+'"]');
+                if(!item||!input||item.approved||item.paymentId)continue;
+                const amount=Number(fd.get(input.name));
+                if(!Number.isFinite(amount)||amount<0){alert("Informe valores válidos, iguais ou maiores que zero.");return;}
+                changed.push({id:item.id,amount});
+            }
+            if(!changed.length){alert("Não há valores pendentes para alterar.");return;}
+            const byId=new Map(changed.map(x=>[String(x.id),x.amount]));
+            const items=current.items.map(i=>({id:i.id,employee_id:i.employeeId,description:i.description,kind:i.kind,amount:byId.has(String(i.id))?byId.get(String(i.id)):i.amount,created_at:i.createdAt||null,due_date:i.dueDate||null,source:i.source||"manual",approved:Boolean(i.approved),payment_id:i.paymentId||null,extra_category:i.extraCategory||null}));
+            try{await window.PRIMEAuth.requestCompany("/payroll/periods/"+encodeURIComponent(current.id),{method:"PATCH",body:JSON.stringify({items})});await syncRemoteRecords();draw();alert("Valores atualizados. O total da folha foi recalculado.");}
+            catch(error){alert(error.message||"Não foi possível salvar as alterações.");}
         }));
         host.querySelectorAll("[data-p-extra-form]").forEach(form=>form.querySelector('[name="category"]')?.addEventListener("change",e=>{
             const wrap=form.querySelector("[data-extra-description-wrap]");if(wrap)wrap.style.display=e.target.value==="OUTROS"?"":"none";
