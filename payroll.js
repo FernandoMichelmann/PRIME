@@ -338,7 +338,7 @@
             if(!confirm("Aprovar "+employee.name+" — "+item.description+" ("+money(item.amount)+") e enviar para Pagamentos?"))return;
             b.disabled=true;
             try{
-                const payment=await window.PRIMEAuth.requestCompany("/payroll/payments",{method:"POST",body:JSON.stringify({month,employee_id:employee.id,payment_type:item.source==="extra_cost"?"beneficio":item.description.includes("5º dia útil")?"saldo":item.description.includes("dia 20")?"adiantamento":"outro",amount:Number(item.amount),due_date:item.dueDate||month+"-20",status:"pendente",paid_at:null,method:null})});
+                const payment=await window.PRIMEAuth.requestCompany("/payroll/payments",{method:"POST",body:JSON.stringify({source_item_id:item.id,month,employee_id:employee.id,payment_type:item.source==="extra_cost"?"beneficio":item.description.includes("5º dia útil")?"saldo":item.description.includes("dia 20")?"adiantamento":"outro",amount:Number(item.amount),due_date:item.dueDate||month+"-20",status:"pendente",paid_at:null,method:null})});
                 const items=current.items.map(i=>({id:i.id,employee_id:i.employeeId,description:i.description,kind:i.kind,amount:i.amount,created_at:i.createdAt||null,due_date:i.dueDate||null,source:i.source||"manual",approved:i.id===item.id?true:Boolean(i.approved),payment_id:i.id===item.id?payment.id:i.paymentId||null,extra_category:i.extraCategory||null}));
                 await window.PRIMEAuth.requestCompany("/payroll/periods/"+encodeURIComponent(current.id),{method:"PATCH",body:JSON.stringify({items})});await syncRemoteRecords();tab="pagamentos";draw();
             }catch(error){alert(error.message||"Não foi possível enviar o pagamento.");b.disabled=false;}
