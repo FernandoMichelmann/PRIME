@@ -8,7 +8,7 @@
     const monthNow = () => today().slice(0,7);
     const makeId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : "pay-"+Date.now()+"-"+Math.random().toString(16).slice(2);
     const blank = () => ({employees:[],periods:[],payments:[]});
-    let data = load(), host = null, tab = "resumo", month = monthNow();
+    let data = load(), host = null, tab = "resumo", month = monthNow(), editingEmployeeId = null;
     let remoteEmployees = [], apiEmployeeState = "loading", apiEmployeeError = "";
     let apiRecordsState = "loading", apiRecordsError = "";
 
@@ -116,10 +116,12 @@
         '<div class="payroll-panel"><h2>Limites desta versão</h2><p class="payroll-muted">Rubricas manuais não equivalem a cálculo oficial. INSS, IRRF, FGTS, férias, décimo terceiro, rescisões, permissões e backend seguro ainda precisam de implementação e validação especializada.</p></div>';
     }
     function employeeView(){
-        return '<div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>Novo colaborador</h2><p>Novos cadastros são enviados à API autenticada da transportadora. Não informe dados bancários nesta etapa.</p></div></div>'+
-        '<form class="payroll-form" id="p-employee"><label>Nome completo<input name="name" required maxlength="140"></label><label>CPF/CNPJ (opcional)<input name="taxId" maxlength="24"></label><label>Vínculo<select name="type"><option>CLT</option><option>PJ</option><option value="outro">Outro</option></select></label><label>Cargo/função<input name="role" maxlength="100"></label><label>Setor<input name="department" maxlength="100"></label><label>Centro de custo<input name="costCenter" maxlength="100"></label><label>Início do vínculo<input type="date" name="startDate" required value="'+today()+'"></label><label>Remuneração mensal (R$)<input type="number" name="salary" min="0" step="0.01" required value="0"></label><label>Situação<select name="status"><option value="ativo">Ativo</option><option value="inativo">Inativo</option></select></label><div class="payroll-form-actions"><button class="button-primary" type="submit">Salvar funcionário</button></div></form></div>'+
+        const editingEmployee = editingEmployeeId ? allEmployees().find(e=>String(e.id)===String(editingEmployeeId)) : null;
+        const selected = (actual, expected) => String(actual ?? "") === String(expected ?? "") ? " selected" : "";
+        return '<div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>'+(editingEmployee?'Editar colaborador':'Novo colaborador')+'</h2><p>'+(editingEmployee?'Atualize os dados do cadastro existente. O histórico da folha e dos pagamentos será preservado.':'Novos cadastros são enviados à API autenticada da transportadora. Não informe dados bancários nesta etapa.')+'</p></div></div>'+
+        '<form class="payroll-form" id="p-employee"><label>Nome completo<input name="name" required maxlength="140" value="'+esc(editingEmployee?.name||"")+'"></label><label>CPF/CNPJ (opcional)<input name="taxId" maxlength="24" value="'+esc(editingEmployee?.taxId||"")+'"></label><label>Vínculo<select name="type"><option'+selected(editingEmployee?.type,"CLT")+'>CLT</option><option'+selected(editingEmployee?.type,"PJ")+'>PJ</option><option value="outro"'+selected(editingEmployee?.type,"outro")+'>Outro</option></select></label><label>Cargo/função<input name="role" maxlength="100" value="'+esc(editingEmployee?.role||"")+'"></label><label>Setor<input name="department" maxlength="100" value="'+esc(editingEmployee?.department||"")+'"></label><label>Centro de custo<input name="costCenter" maxlength="100" value="'+esc(editingEmployee?.costCenter||"")+'"></label><label>Início do vínculo<input type="date" name="startDate" required value="'+esc(editingEmployee?.startDate||today())+'"></label><label>Remuneração mensal (R$)<input type="number" name="salary" min="0" step="0.01" required value="'+esc(editingEmployee ? editingEmployee.salary : 0)+'"></label><label>Situação<select name="status"><option value="ativo"'+selected(editingEmployee?.status,"ativo")+'>Ativo</option><option value="inativo"'+selected(editingEmployee?.status,"inativo")+'>Inativo</option></select></label><div class="payroll-form-actions"><button class="button-primary" type="submit">'+(editingEmployee?'Salvar alterações':'Salvar funcionário')+'</button>'+(editingEmployee?'<button class="button-secondary" type="button" data-p-employee-cancel>Cancelar</button>':'')+'</div></form></div>'+
         '<div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>Colaboradores cadastrados</h2><p>'+allEmployees().length+' registro(s), incluindo inativos.</p></div></div>'+
-        (allEmployees().length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Nome</th><th>Vínculo</th><th>Função/setor</th><th>Remuneração</th><th>Situação</th><th>Origem</th><th></th></tr></thead><tbody>'+allEmployees().map(e=>'<tr><td><strong>'+esc(e.name)+'</strong><small>'+esc(e.taxId||"Documento não informado")+'</small></td><td>'+esc(e.type)+'</td><td>'+esc(e.role||"—")+'<small>'+esc(e.department||"—")+'</small></td><td>'+money(e.salary)+'</td><td>'+esc(e.status)+'</td><td>'+((e.source==="api")?"Backend":"Local (legado)")+'</td><td><button type="button" class="button-secondary payroll-small-button" '+(e.source==="api"?'data-p-api-toggle="'+esc(e.id)+'"':'data-p-toggle="'+esc(e.id)+'"')+'>'+(e.status==="ativo"?"Inativar":"Reativar")+'</button></td></tr>').join('')+'</tbody></table></div>':'<div class="payroll-empty">Nenhum colaborador cadastrado.</div>')+'</div>';
+        (allEmployees().length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Nome</th><th>Vínculo</th><th>Função/setor</th><th>Remuneração</th><th>Situação</th><th>Origem</th><th>Ações</th></tr></thead><tbody>'+allEmployees().map(e=>'<tr><td><strong>'+esc(e.name)+'</strong><small>'+esc(e.taxId||"Documento não informado")+'</small></td><td>'+esc(e.type)+'</td><td>'+esc(e.role||"—")+'<small>'+esc(e.department||"—")+'</small></td><td>'+money(e.salary)+'</td><td>'+esc(e.status)+'</td><td>'+((e.source==="api")?"Backend":"Local (legado)")+'</td><td style="min-width:190px;white-space:normal"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button type="button" class="button-secondary payroll-small-button" data-p-employee-edit="'+esc(e.id)+'">Editar</button><button type="button" class="button-secondary payroll-small-button" '+(e.source==="api"?'data-p-api-toggle="'+esc(e.id)+'"':'data-p-toggle="'+esc(e.id)+'"')+'>'+(e.status==="ativo"?"Inativar":"Reativar")+'</button></div></td></tr>').join('')+'</tbody></table></div>':'<div class="payroll-empty">Nenhum colaborador cadastrado.</div>')+'</div>';
     }
     function periodView(p){
         if(!p)return '<div class="payroll-toolbar"><label>Competência <input type="month" data-p-month value="'+esc(month)+'"></label></div><div class="payroll-panel"><h2>Preparar competência</h2><p class="payroll-muted">Adicione rubricas manuais. Nenhuma alíquota legal será presumida.</p><button type="button" class="button-primary" data-p-create>Criar folha da competência</button></div>';
@@ -139,7 +141,7 @@
             const form=e.currentTarget, submit=form.querySelector('button[type="submit"]'), f=new FormData(form);
             const name=String(f.get("name")||"").trim();
             if(!name || !window.PRIMEAuth) return;
-            if(submit){submit.disabled=true;submit.textContent="Salvando...";}
+            if(submit){submit.disabled=true;submit.textContent=editingEmployeeId?"Salvando alterações...":"Salvando...";}
             const payload={
                 name, tax_id:String(f.get("taxId")||"").trim()||null,
                 employment_type:String(f.get("type")||"CLT"), role:String(f.get("role")||"").trim()||null,
@@ -148,11 +150,26 @@
                 is_active:String(f.get("status")||"ativo")==="ativo"
             };
             try{
-                await window.PRIMEAuth.requestCompany("/payroll/employees",{method:"POST",body:JSON.stringify(payload)});
-                await syncAll(); form.reset(); draw();
+                if(editingEmployeeId){
+                    await window.PRIMEAuth.requestCompany("/payroll/employees/"+encodeURIComponent(editingEmployeeId),{method:"PATCH",body:JSON.stringify(payload)});
+                }else{
+                    await window.PRIMEAuth.requestCompany("/payroll/employees",{method:"POST",body:JSON.stringify(payload)});
+                }
+                editingEmployeeId=null;
+                await syncAll();
+                form.reset();
+                draw();
             }catch(error){alert(error.message||"Não foi possível salvar o funcionário no backend.");}
-            finally{if(submit){submit.disabled=false;submit.textContent="Salvar funcionário";}}
+            finally{if(submit){submit.disabled=false;submit.textContent=editingEmployeeId?"Salvar alterações":"Salvar funcionário";}}
         });
+        host.querySelector("[data-p-employee-cancel]")?.addEventListener("click",()=>{editingEmployeeId=null;draw();});
+        host.querySelectorAll("[data-p-employee-edit]").forEach(b=>b.addEventListener("click",()=>{
+            const employee=allEmployees().find(x=>String(x.id)===String(b.dataset.pEmployeeEdit));
+            if(!employee){alert("Funcionário não encontrado. Atualize a lista e tente novamente.");return;}
+            editingEmployeeId=employee.id;
+            draw();
+            host.querySelector("#p-employee")?.scrollIntoView({behavior:"smooth",block:"start"});
+        }));
         host.querySelectorAll("[data-p-api-toggle]").forEach(b=>b.addEventListener("click",async()=>{
             const employee=remoteEmployees.find(x=>x.id===b.dataset.pApiToggle); if(!employee||!window.PRIMEAuth)return;
             const next=employee.status!=="ativo";
