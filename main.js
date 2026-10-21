@@ -238,14 +238,30 @@ document.addEventListener("DOMContentLoaded", () => {
         return ordinaryExpenses + registeredExpenses + getFinalizedTripTotals(month).expense + getMonthlyVehicleMaintenanceTotal(month) + payrollCost;
     }
 
-    function getPaidRevenueRecords() {
+    function getAllRevenueRecords() {
         try {
             const rows = JSON.parse(localStorage.getItem("primeRevenueDemoV1") || "[]");
-            return Array.isArray(rows) ? rows.filter((row) => row.payment_status === "recebido") : [];
+            return Array.isArray(rows) ? rows : [];
         } catch (error) {
-            console.error("Não foi possível ler as receitas recebidas:", error);
+            console.error("Não foi possível ler as receitas:", error);
             return [];
         }
+    }
+
+    function getPaidRevenueRecords() {
+        return getAllRevenueRecords().filter((row) => row.payment_status === "recebido");
+    }
+
+    function getReceivableRevenueRecords() {
+        return getAllRevenueRecords().filter((row) => row.payment_status !== "recebido");
+    }
+
+    function getReceivableBalance() {
+        return getReceivableRevenueRecords().reduce((sum, row) => {
+            const total = Math.max(0, Number(row.total_amount) || 0);
+            const received = Math.max(0, Number(row.received_amount) || 0);
+            return sum + Math.max(0, total - received);
+        }, 0);
     }
 
     function getMonthlyRevenueTotal(month = currentMonth()) {
@@ -324,13 +340,15 @@ document.addEventListener("DOMContentLoaded", () => {
         const revenue = getMonthlyRevenueTotal();
         const expense = getMonthlyExpenseTotal();
         const result = revenue - expense;
+        const receivableRecords = getReceivableRevenueRecords();
+        const receivableBalance = getReceivableBalance();
 
         if ($("#balanceValue")) {
             $("#balanceValue").textContent = money(getCashBalance());
         }
 
-        if ($("#revenueValue")) {
-            $("#revenueValue").textContent = money(revenue);
+        if ($("#receivableValue")) {
+            $("#receivableValue").textContent = money(receivableBalance);
         }
 
         if ($("#expenseValue")) {
@@ -342,19 +360,15 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         const monthlyTransactions = getMonthTransactions();
-
-        const revenueCount = monthlyTransactions.filter(
-            (item) => item.type === "revenue"
-        ).length + getPaidRevenueRecords().filter((item) => monthKey(item.payment_date) === currentMonth()).length;
-
         const expenseCount =
             monthlyTransactions.filter((item) => item.type === "expense").length +
             getInstallments().filter((item) => monthKey(item.date) === currentMonth()).length +
+            vehicleTrips.filter((trip) => trip.finalizedAt && monthKey(trip.tripDate) === currentMonth()).length +
             getVehicleCostOccurrences(currentMonth()).length +
             (window.PRIMEPayroll && window.PRIMEPayroll.getCompetencyCost(currentMonth()) > 0 ? 1 : 0);
 
         const balanceStatus = $(".kpi-card:nth-child(1) .kpi-bottom");
-        const revenueStatus = $(".kpi-card:nth-child(2) .kpi-bottom");
+        const receivableStatus = $(".kpi-card:nth-child(2) .kpi-bottom");
         const expenseStatus = $(".kpi-card:nth-child(3) .kpi-bottom");
         const resultStatus = $(".kpi-card:nth-child(4) .kpi-bottom");
 
@@ -370,13 +384,13 @@ document.addEventListener("DOMContentLoaded", () => {
             `;
         }
 
-        if (revenueStatus) {
-            revenueStatus.innerHTML = `
+        if (receivableStatus) {
+            receivableStatus.innerHTML = `
                 <span class="status-neutral">
                     <i data-lucide="minus"></i>
-                    ${revenueCount ? `${revenueCount} lançamento(s)` : "Sem registros"}
+                    ${receivableRecords.length ? `${receivableRecords.length} fatura(s) pendente(s)` : "Nenhuma fatura pendente"}
                 </span>
-                <span class="muted">Mês atual</span>
+                <span class="muted">Em aberto e vencidas</span>
             `;
         }
 
