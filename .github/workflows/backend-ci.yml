@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/backend-prime-local
+      - feature/modulo-receitas-prime
   pull_request:
     branches:
       - main
