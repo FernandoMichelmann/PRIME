@@ -131,7 +131,7 @@
     function paymentView(){
         return '<div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>Registrar pagamento</h2><p>Adiantamento, saldo salarial ou outro pagamento. Só marque como pago após a saída efetiva do dinheiro.</p></div></div><form class="payroll-form" id="p-payment"><label>Competência<input type="month" name="month" required value="'+esc(month)+'"></label><label>Funcionário<select name="employeeId" required>'+active().map(e=>'<option value="'+esc(e.id)+'">'+esc(e.name)+'</option>').join('')+'</select></label><label>Tipo<select name="type"><option value="adiantamento">Adiantamento (dia 20)</option><option value="saldo">Saldo salarial (5º dia útil)</option><option value="outro">Outro</option></select></label><label>Valor (R$)<input name="amount" type="number" min="0.01" step="0.01" required></label><label>Vencimento<input name="dueDate" type="date" required></label><label>Situação<select name="status"><option value="pendente">Pendente</option><option value="pago">Pago</option></select></label><label>Data efetiva<input name="paidAt" type="date" value="'+today()+'"></label><label>Método<input name="method" maxlength="60" placeholder="PIX, transferência..."></label><div class="payroll-form-actions"><button class="button-primary" type="submit" '+(active().length?'':'disabled')+'>Registrar pagamento</button></div></form></div>'+
         '<div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>Histórico de pagamentos</h2><p>'+data.payments.length+' registro(s). Pagamentos não são apagados ao reprocessar folhas.</p></div></div>'+
-        (data.payments.length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Competência</th><th>Funcionário</th><th>Tipo</th><th>Vencimento</th><th>Valor</th><th>Status</th></tr></thead><tbody>'+[...data.payments].sort((a,b)=>(b.dueDate||"").localeCompare(a.dueDate||"")).map(p=>'<tr><td>'+esc(p.month)+'</td><td>'+esc(employeeById(p.employeeId)?.name||"Colaborador")+'</td><td>'+esc(p.type)+'</td><td>'+esc(p.dueDate)+'</td><td>'+money(p.amount)+'</td><td>'+esc(p.status)+(p.status!=="pago"?' <button type="button" class="button-secondary payroll-small-button" data-p-paid="'+esc(p.id)+'">Marcar pago</button>':'')+'</td></tr>').join('')+'</tbody></table></div>':'<div class="payroll-empty">Nenhum pagamento registrado.</div>')+'</div>';
+        (data.payments.length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Competência</th><th>Funcionário</th><th>Tipo</th><th>Vencimento</th><th>Valor</th><th>Status</th></tr></thead><tbody>'+[...data.payments].sort((a,b)=>(b.dueDate||"").localeCompare(a.dueDate||"")).map(p=>'<tr><td>'+esc(p.month)+'</td><td>'+esc(employeeById(p.employeeId)?.name||"Colaborador")+'</td><td>'+esc(p.type)+'</td><td>'+esc(p.dueDate)+'</td><td>'+money(p.amount)+'</td><td>'+esc(p.status)+(p.status!=="pago"?' <button type="button" class="button-secondary payroll-small-button" data-p-paid="'+esc(p.id)+'">Marcar pago</button>':' <button type="button" class="button-secondary payroll-small-button" data-p-reverse="'+esc(p.id)+'">Estornar</button>')+' <button type="button" class="button-secondary payroll-small-button" data-p-delete="'+esc(p.id)+'">Excluir</button></td></tr>').join('')+'</tbody></table></div>':'<div class="payroll-empty">Nenhum pagamento registrado.</div>')+'</div>';
     }
     function bindForms(){
         $("#p-employee",host)?.addEventListener("submit", async e=>{
@@ -215,6 +215,22 @@
                 await window.PRIMEAuth.requestCompany("/payroll/payments/"+encodeURIComponent(b.dataset.pPaid),{method:"PATCH",body:JSON.stringify({status:"pago",paid_at:today()})});
                 await syncRemoteRecords();draw();
             }catch(error){alert(error.message||"Não foi possível atualizar o pagamento.");}
+        }));
+        host.querySelectorAll("[data-p-reverse]").forEach(b=>b.addEventListener("click",async()=>{
+            if(!confirm("Estornar este pagamento? Ele voltará para Pendente e o Dashboard será recalculado.")||!window.PRIMEAuth)return;
+            try{
+                await window.PRIMEAuth.requestCompany("/payroll/payments/"+encodeURIComponent(b.dataset.pReverse),{method:"PATCH",body:JSON.stringify({status:"pendente",paid_at:null})});
+                await syncRemoteRecords();draw();
+                alert("Pagamento estornado. O Dashboard foi atualizado.");
+            }catch(error){alert(error.message||"Não foi possível estornar o pagamento.");}
+        }));
+        host.querySelectorAll("[data-p-delete]").forEach(b=>b.addEventListener("click",async()=>{
+            if(!confirm("Excluir permanentemente este pagamento? A ação será registrada na auditoria e não poderá ser desfeita.")||!window.PRIMEAuth)return;
+            try{
+                await window.PRIMEAuth.requestCompany("/payroll/payments/"+encodeURIComponent(b.dataset.pDelete),{method:"DELETE"});
+                await syncRemoteRecords();draw();
+                alert("Pagamento excluído. O Dashboard foi atualizado.");
+            }catch(error){alert(error.message||"Não foi possível excluir o pagamento.");}
         }));
     }
     window.PRIMEPayroll={
