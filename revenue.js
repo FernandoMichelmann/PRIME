@@ -7,12 +7,12 @@
         .revenue-header{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap;margin-bottom:22px}
         .revenue-header h1{font-size:clamp(25px,3vw,34px);margin:5px 0 8px;letter-spacing:-.7px}
         .revenue-header p{color:var(--muted,#94A3B8);margin:0;line-height:1.7}
-        .revenue-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:20px}
+        .revenue-kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin-bottom:20px}
         .revenue-kpi,.revenue-panel{background:var(--surface,#0B1422);border:1px solid var(--border,#1E2D42);border-radius:10px;box-shadow:0 6px 20px #00000012}
         .revenue-kpi{padding:18px;min-width:0}.revenue-kpi span{display:block;color:var(--muted,#94A3B8);font-size:11px;margin-bottom:12px}
         .revenue-kpi strong{font-size:clamp(17px,2vw,24px);overflow-wrap:anywhere}.revenue-kpi small{display:block;color:var(--muted,#94A3B8);font-size:10px;margin-top:8px}
         .revenue-panel{padding:20px;margin-bottom:18px}.revenue-panel-heading{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:17px}
-        .revenue-panel-heading h2{margin:0 0 5px;font-size:16px}.revenue-panel-heading p{margin:0;color:var(--muted,#94A3B8);font-size:12px;line-height:1.6}
+        .revenue-heading-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.revenue-panel-heading h2{margin:0 0 5px;font-size:16px}.revenue-panel-heading p{margin:0;color:var(--muted,#94A3B8);font-size:12px;line-height:1.6}
         .revenue-toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
         .revenue-toolbar input,.revenue-toolbar select,.revenue-form input,.revenue-form select,.revenue-form textarea{background:var(--surface-raised,#101E30);border:1px solid var(--border,#263851);border-radius:7px;color:var(--text,#E2E8F0);padding:10px 12px;font:inherit;min-height:39px}
         .revenue-toolbar input{flex:1;min-width:180px}.revenue-toolbar select{min-width:150px}
