@@ -334,3 +334,29 @@ def update_payroll_payment(
     db.commit()
     db.refresh(payment)
     return payment
+
+
+@router.delete("/payments/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_payroll_payment(
+    payment_id: UUID,
+    request: Request,
+    membership=Depends(require_company_permission("payroll.write")),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    payment = db.scalar(select(PayrollPayment).where(
+        PayrollPayment.id == payment_id,
+        PayrollPayment.company_id == membership.company_id,
+    ))
+    if payment is None:
+        raise HTTPException(status_code=404, detail="Pagamento não encontrado.")
+    db.add(AuditLog(
+        company_id=membership.company_id, actor_user_id=user.id,
+        action="payroll.payment.deleted", resource_type="payroll_payment",
+        resource_id=str(payment.id),
+        details={"month": payment.month, "amount": str(payment.amount), "status": payment.status},
+        ip_address=request.client.host if request.client else None,
+    ))
+    db.delete(payment)
+    db.commit()
+    return None
