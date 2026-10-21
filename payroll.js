@@ -600,7 +600,7 @@
         render,
         getCompetencyCost:monthCost,
         // Total da folha ainda em aberto no mês, independentemente da data de vencimento.
-        getOutstandingCompetencyCost:(m)=>data.periods.filter(period=>period.month===m).reduce((sum,period)=>sum+(period.items||[]).reduce((itemSum,item)=>{
+        getOutstandingCompetencyCost:(m)=>data.periods.filter(period=>m==null||period.month===m).reduce((sum,period)=>sum+(period.items||[]).reduce((itemSum,item)=>{
             const linkedPayment=data.payments.find(payment=>String(payment.id)===String(item.paymentId||"")||String(payment.sourceItemId||"")===String(item.id));
             if(linkedPayment&&linkedPayment.status==="pago")return itemSum;
             return itemSum+Math.max(0,Number(item.amount)||0);
