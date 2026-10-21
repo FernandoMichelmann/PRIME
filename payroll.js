@@ -148,7 +148,7 @@
         (tab==="resumo"?summary(employees,p,pending):"")+(tab==="funcionarios"?employeeView():"")+(tab==="folha"?periodView(p):"")+(tab==="pagamentos"?paymentView():"");
         host.querySelector("[data-p-back]")?.addEventListener("click",()=>window.PRIMEPayroll.onBack?.());
         host.querySelectorAll("[data-p-tab]").forEach(b=>b.addEventListener("click",()=>{tab=b.dataset.pTab;draw();}));
-        host.querySelectorAll("[data-p-month]").forEach(i=>i.addEventListener("change",()=>{if(/^\d{4}-\d{2}$/.test(i.value))month=i.value;draw();}));
+        host.querySelectorAll("[data-p-month]").forEach(i=>i.addEventListener("change",async()=>{if(/^\d{4}-\d{2}$/.test(i.value))month=i.value;await syncAll();await ensureAutomaticPayroll();draw();}));
         bindForms();
         if(window.lucide)window.lucide.createIcons();
     }
@@ -309,7 +309,7 @@
             e.preventDefault();const current=period();if(!current||!active().length||!window.PRIMEAuth)return;
             const form=e.currentTarget,f=new FormData(form), amount=Number(f.get("amount")||0);
             const item={id:makeId(),employee_id:String(f.get("employeeId")),description:String(f.get("description")||"").trim(),kind:String(f.get("kind")),amount,created_at:new Date().toISOString()};
-            const items=[...current.items,item];
+            const items=[...current.items.map(i=>({id:i.id,employee_id:i.employeeId,description:i.description,kind:i.kind,amount:i.amount,created_at:i.createdAt||null,due_date:i.dueDate||null,source:i.source||"manual",approved:Boolean(i.approved),payment_id:i.paymentId||null,extra_category:i.extraCategory||null})),item];
             const submit=form.querySelector('button[type="submit"]');if(submit){submit.disabled=true;submit.textContent="Salvando...";}
             try{
                 await window.PRIMEAuth.requestCompany("/payroll/periods/"+encodeURIComponent(current.id),{method:"PATCH",body:JSON.stringify({items})});
