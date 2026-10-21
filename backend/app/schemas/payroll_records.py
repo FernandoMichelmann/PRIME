@@ -105,7 +105,7 @@ class PayrollPaymentUpdate(BaseModel):
     @field_validator("month")
     @classmethod
     def valid_month(cls, value: str | None) -> str | None:
-        if value is not None and not re.fullmatch(r"\\d{4}-(0[1-9]|1[0-2])", value):
+        if value is not None and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", value):
             raise ValueError("Competência deve estar no formato AAAA-MM.")
         return value
 
