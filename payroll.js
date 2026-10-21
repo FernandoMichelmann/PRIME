@@ -222,7 +222,7 @@
         getCompetencyCost:monthCost,
         getPaidPaymentsTotal:paidTotal,
         getPaidPaymentsInMonth:paidInMonth,
-        getPaidPaymentsThroughDate:(dateLimit)=>data.payments.filter(p=>p.status==="pago"&&(!p.paidAt||String(p.paidAt).slice(0,10)<=dateLimit)).reduce((s,p)=>s+Number(p.amount||0),0),
+        getPaidPaymentsThroughDate:(dateLimit)=>data.payments.filter(p=>{const paidDate=String(p.paidAt||p.dueDate||"").slice(0,10);return p.status==="pago"&&Boolean(paidDate)&&paidDate<=dateLimit;}).reduce((s,p)=>s+Number(p.amount||0),0),
         getPendingPaymentsForDate:(date)=>data.payments.filter(p=>p.status!=="pago"&&String(p.dueDate||"").slice(0,10)===date).reduce((s,p)=>s+Number(p.amount||0),0),
         getPendingPaymentsTotal:(monthLimit)=>data.payments.filter(p=>p.status!=="pago"&&(!monthLimit||((p.dueDate&&String(p.dueDate).slice(0,7)<=monthLimit)||(!p.dueDate&&String(p.month||"")<=monthLimit)))).reduce((s,p)=>s+Number(p.amount||0),0),
         onBack:null
