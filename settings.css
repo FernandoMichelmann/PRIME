@@ -1,0 +1,127 @@
+
+/* PRIME settings module — tokens inherit the existing visual system. */
+:root[data-theme="light"] {
+    color-scheme: light;
+    --black: #F3F6FA;
+    --surface: #FFFFFF;
+    --surface-raised: #FFFFFF;
+    --surface-hover: #EAF1FA;
+    --blue: #2563EB;
+    --blue-light: #1D4ED8;
+    --blue-dark: #DBEAFE;
+    --text: #172033;
+    --muted: #5B6577;
+    --subtle: #738096;
+    --border: #D9E1EC;
+    --green: #15803D;
+    --red: #B91C1C;
+    --yellow: #A16207;
+}
+:root[data-theme="light"] body { color-scheme: light; }
+:root[data-theme="light"] .sidebar,
+:root[data-theme="light"] .topbar,
+:root[data-theme="light"] .panel,
+:root[data-theme="light"] .kpi-card,
+:root[data-theme="light"] .settings-panel,
+:root[data-theme="light"] .settings-nav,
+:root[data-theme="light"] .settings-info {
+    background: var(--surface);
+    color: var(--text);
+    border-color: var(--border);
+}
+:root[data-theme="light"] .nav-item { color: var(--muted); }
+:root[data-theme="light"] .nav-item.active,
+:root[data-theme="light"] .nav-item:hover { background: var(--surface-hover); color: var(--blue); }
+:root[data-theme="light"] input,
+:root[data-theme="light"] select,
+:root[data-theme="light"] textarea,
+:root[data-theme="light"] .search-box {
+    background: #FFFFFF;
+    color: var(--text);
+    border-color: var(--border);
+}
+:root[data-theme="light"] table th { color: #465269; }
+:root[data-theme="light"] table td { border-color: var(--border); }
+:root[data-theme="light"] .muted,
+:root[data-theme="light"] .settings-muted { color: var(--muted); }
+
+.prime-settings { width: 100%; max-width: 1440px; margin: 0 auto; }
+.settings-header { display:flex; align-items:flex-start; justify-content:space-between; gap:24px; margin-bottom:24px; }
+.settings-header h1 { margin:5px 0 8px; font-size:clamp(24px,3vw,32px); font-weight:700; letter-spacing:-.04em; }
+.settings-header p { margin:0; color:var(--muted); font-size:13px; }
+.settings-layout { display:grid; grid-template-columns:230px minmax(0,1fr); gap:18px; align-items:start; }
+.settings-nav,.settings-panel,.settings-info { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); }
+.settings-nav { padding:8px; display:flex; flex-direction:column; gap:3px; }
+.settings-nav button { width:100%; text-align:left; border:0; border-radius:6px; background:transparent; color:var(--muted); padding:11px 12px; font:inherit; font-size:12px; cursor:pointer; transition:background .15s ease,color .15s ease; }
+.settings-nav button:hover { background:var(--surface-hover); color:var(--text); }
+.settings-nav button.active { background:var(--blue-dark); color:var(--blue-light); font-weight:700; }
+.settings-panel { min-width:0; padding:24px; }
+.settings-section-heading { margin-bottom:22px; }
+.settings-section-heading h2,.settings-info h2 { margin:0 0 7px; font-size:17px; font-weight:700; }
+.settings-section-heading p,.settings-info p { margin:0; color:var(--muted); line-height:1.7; }
+.settings-fields { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.settings-field { display:flex; flex-direction:column; gap:7px; min-width:0; color:var(--muted); font-size:11px; font-weight:600; }
+.settings-field input,.settings-field select,.settings-preference select { width:100%; min-height:40px; padding:10px 12px; color:var(--text); background:var(--black); border:1px solid var(--border); border-radius:6px; outline-offset:2px; }
+.settings-field input:focus,.settings-field select:focus,.settings-preference select:focus { border-color:var(--blue); }
+.settings-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:24px; }
+.settings-actions button,.settings-backup button,.settings-file-button { display:inline-flex; align-items:center; justify-content:center; min-height:38px; padding:10px 15px; border-radius:6px; border:1px solid var(--border); cursor:pointer; font:inherit; font-size:11px; font-weight:700; }
+.settings-actions .button-primary,.settings-backup .button-primary { color:#fff; background:var(--blue); border-color:var(--blue); }
+.settings-actions .button-secondary,.settings-file-button { color:var(--text); background:var(--surface-raised); }
+.settings-preference { display:grid; grid-template-columns:minmax(150px,1fr) minmax(180px,1fr); align-items:center; gap:20px; padding:17px 0; border-bottom:1px solid var(--border); }
+.settings-preference label { font-weight:600; color:var(--text); }
+.settings-check { display:flex; align-items:center; gap:10px; margin-top:17px; color:var(--text); cursor:pointer; }
+.settings-check input { accent-color:var(--blue); width:15px; height:15px; }
+.settings-info { padding:22px; }
+.settings-info p + p { margin-top:12px; }
+.settings-local-note { margin:16px 0 0; color:var(--muted); line-height:1.7; font-size:11px; }
+.settings-backup { display:flex; flex-wrap:wrap; gap:10px; }
+.settings-file-button { position:relative; overflow:hidden; }
+.settings-file-button input { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+.settings-muted { margin-top:18px; color:var(--muted); font-size:11px; }
+@media (max-width: 900px) {
+    .settings-layout { grid-template-columns:1fr; }
+    .settings-nav { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .settings-nav button { text-align:center; }
+}
+@media (max-width: 560px) {
+    .settings-panel { padding:17px; }
+    .settings-fields { grid-template-columns:1fr; }
+    .settings-preference { grid-template-columns:1fr; gap:9px; }
+    .settings-nav { grid-template-columns:1fr 1fr; }
+}
+
+
+/* Área do desenvolvedor */
+.developer-nav-item { margin-top: 4px; }
+.prime-developer { width:100%; max-width:1440px; margin:0 auto; }
+.developer-warning { margin:0 0 18px; padding:15px 17px; border:1px solid #B45309; border-left:4px solid #D97706; border-radius:8px; background:rgba(217,119,6,.09); color:var(--text); }
+.developer-warning strong { display:block; margin-bottom:5px; font-size:12px; }
+.developer-warning p { margin:0; font-size:12px; line-height:1.65; color:var(--muted); }
+.developer-tabs { display:flex; gap:8px; margin-bottom:16px; }
+.developer-tabs button { display:inline-flex; align-items:center; gap:9px; border:1px solid var(--border); border-radius:7px; padding:10px 14px; color:var(--muted); background:var(--surface); font:inherit; font-size:12px; cursor:pointer; }
+.developer-tabs button.active { background:var(--blue-dark); color:var(--blue-light); border-color:var(--blue); font-weight:700; }
+.developer-tabs button span { display:inline-flex; min-width:20px; justify-content:center; padding:2px 5px; border-radius:99px; background:var(--surface-hover); }
+.developer-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:18px; align-items:start; }
+.developer-list-panel { min-width:0; }
+.developer-record-list { display:flex; flex-direction:column; }
+.developer-record { display:grid; grid-template-columns:minmax(0,1fr) auto auto; align-items:center; gap:12px; padding:14px 0; border-bottom:1px solid var(--border); }
+.developer-record:last-child { border-bottom:0; }
+.developer-record>div { min-width:0; display:flex; flex-direction:column; gap:4px; }
+.developer-record strong { color:var(--text); font-size:12px; overflow-wrap:anywhere; }
+.developer-record small { color:var(--muted); font-size:10px; overflow-wrap:anywhere; }
+.developer-status { padding:5px 8px; border-radius:99px; font-size:10px; white-space:nowrap; background:var(--surface-hover); color:var(--muted); }
+.developer-status.active { color:var(--green); }
+.developer-status.pending { color:var(--yellow); }
+.developer-status.inactive { color:var(--red); }
+.developer-delete { display:grid; place-items:center; width:32px; height:32px; border:1px solid var(--border); border-radius:6px; color:var(--red); background:transparent; cursor:pointer; }
+.developer-delete:hover { background:var(--surface-hover); }
+.settings-empty { padding:22px 10px; text-align:center; color:var(--muted); font-size:12px; border:1px dashed var(--border); border-radius:8px; }
+:root[data-theme="light"] .developer-warning { background:#FFF7ED; border-color:#C2410C; }
+@media (max-width:1000px) { .developer-grid { grid-template-columns:1fr; } }
+@media (max-width:560px) {
+ .developer-tabs { display:grid; grid-template-columns:1fr 1fr; }
+ .developer-tabs button { justify-content:center; }
+ .developer-record { grid-template-columns:minmax(0,1fr) auto; }
+ .developer-status { grid-column:1; grid-row:2; justify-self:start; }
+ .developer-delete { grid-column:2; grid-row:1 / span 2; }
+}
