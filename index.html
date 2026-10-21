@@ -13,14 +13,17 @@
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap"
         rel="stylesheet">
 
-    <link rel="stylesheet" href="./prime.css">
+    <link rel="stylesheet" href="./prime.css?v=dashboard-split-1">
 
     <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-    <script src="./payroll.js" defer></script>
-    <script src="./auth.js" defer></script>
+    <script src="./payroll.js?v=dashboard-rules-1" defer></script>
+    <script src="./auth.js?v=bb5526d" defer></script>
     <script src="./users.js" defer></script>
-    <script src="./main.js" defer></script>
+    <script src="./revenue.js" defer></script>
+    <script src="./revenue-navigation.js" defer></script>
+    <script src="./cash-flow.js?v=1" defer></script>
+    <script src="./main.js?v=boletos-import-2" defer></script>
 </head>
 
 <body>
@@ -43,7 +46,7 @@
                 <a class="nav-item" href="#expenses" data-page="Despesas">
                     <i data-lucide="trending-down"></i><span>Despesas</span>
                 </a>
-                <a class="nav-item" href="#revenue" data-page="Receitas">
+                <a class="nav-item" href="#receitas-modulo" data-page="Receitas">
                     <i data-lucide="trending-up"></i><span>Receitas</span>
                 </a>
                 <a class="nav-item" href="#cash-flow" data-page="Fluxo de caixa">
@@ -151,39 +154,63 @@
 
                     <article class="kpi-card">
                         <div class="kpi-top">
-                            <span>Receitas do mês</span>
+                            <span>Saldo recebido</span>
+                            <span class="kpi-icon green-icon">
+                                <i data-lucide="circle-dollar-sign"></i>
+                            </span>
+                        </div>
+                        <div class="kpi-value" id="receivedValue">R$ 0,00</div>
+                        <div class="kpi-bottom" id="receivedStatus">
+                            <span class="status-neutral"><i data-lucide="minus"></i> Nenhum recebimento no mês</span>
+                            <span class="muted">Recebido no mês atual</span>
+                        </div>
+                    </article>
+
+                    <article class="kpi-card">
+                        <div class="kpi-top">
+                            <span>Saldo a receber</span>
                             <span class="kpi-icon green-icon">
                                 <i data-lucide="arrow-down-left"></i>
                             </span>
                         </div>
-                        <div class="kpi-value" id="revenueValue">R$ 0,00</div>
-                        <div class="kpi-bottom">
-                            <span class="status-neutral">
-                                <i data-lucide="minus"></i> Sem registros
-                            </span>
-                            <span class="muted">Mês atual</span>
+                        <div class="kpi-value" id="receivableValue">R$ 0,00</div>
+                        <div class="kpi-bottom" id="receivableStatus">
+                            <span class="status-neutral"><i data-lucide="minus"></i> Nenhuma fatura pendente</span>
+                            <span class="muted">Contas em aberto</span>
                         </div>
                     </article>
 
                     <article class="kpi-card">
                         <div class="kpi-top">
-                            <span>Despesas do mês</span>
+                            <span>Despesas pagas</span>
                             <span class="kpi-icon red-icon">
-                                <i data-lucide="arrow-up-right"></i>
+                                <i data-lucide="circle-check"></i>
                             </span>
                         </div>
-                        <div class="kpi-value" id="expenseValue">R$ 0,00</div>
-                        <div class="kpi-bottom">
-                            <span class="status-neutral">
-                                <i data-lucide="minus"></i> Sem registros
-                            </span>
-                            <span class="muted">Mês atual</span>
+                        <div class="kpi-value" id="paidExpenseValue">R$ 0,00</div>
+                        <div class="kpi-bottom" id="paidExpenseStatus">
+                            <span class="status-neutral"><i data-lucide="minus"></i> Nenhum pagamento no mês</span>
+                            <span class="muted">Pago no mês atual</span>
                         </div>
                     </article>
 
                     <article class="kpi-card">
                         <div class="kpi-top">
-                            <span>Resultado financeiro</span>
+                            <span>Despesas a pagar</span>
+                            <span class="kpi-icon red-icon">
+                                <i data-lucide="clock-3"></i>
+                            </span>
+                        </div>
+                        <div class="kpi-value" id="unpaidExpenseValue">R$ 0,00</div>
+                        <div class="kpi-bottom" id="unpaidExpenseStatus">
+                            <span class="status-neutral"><i data-lucide="minus"></i> Nenhuma despesa pendente</span>
+                            <span class="muted">Compromissos do mês atual</span>
+                        </div>
+                    </article>
+
+                    <article class="kpi-card">
+                        <div class="kpi-top">
+                            <span>Resumo financeiro</span>
                             <span class="kpi-icon blue-icon">
                                 <i data-lucide="chart-no-axes-combined"></i>
                             </span>

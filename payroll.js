@@ -5,10 +5,11 @@
     const money = n => new Intl.NumberFormat("pt-BR", {style:"currency",currency:"BRL"}).format(Number(n)||0);
     const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
     const today = () => { const d = new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+    const formatFullDate = value => { const parts=String(value||"").slice(0,10).split("-"); return parts.length===3?parts[2]+"/"+parts[1]+"/"+parts[0]:"—"; };
     const monthNow = () => today().slice(0,7);
     const makeId = () => (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : "pay-"+Date.now()+"-"+Math.random().toString(16).slice(2);
     const blank = () => ({employees:[],periods:[],payments:[]});
-    let data = load(), host = null, tab = "resumo", month = monthNow();
+    let data = load(), host = null, tab = "resumo", month = monthNow(), editingEmployeeId = null;
     let remoteEmployees = [], apiEmployeeState = "loading", apiEmployeeError = "";
     let apiRecordsState = "loading", apiRecordsError = "";
 
@@ -20,7 +21,12 @@
     function mapRemoteEmployee(e) {
         return { id:e.id, name:e.name, taxId:e.tax_id||"", type:e.employment_type||"CLT",
             role:e.role||"", department:e.department||"", costCenter:e.cost_center||"",
-            startDate:e.start_date, salary:Number(e.salary||0), status:e.is_active?"ativo":"inativo",
+            phone:e.phone||"", address:e.address||"", addressNumber:e.address_number||"",
+            postalCode:e.postal_code||"", city:e.city||"", state:e.state||"",
+            maritalStatus:e.marital_status||"", startDate:e.start_date||"", contractEndDate:e.contract_end_date||"",
+            salary:Number(e.salary||0), salarySplit:Boolean(e.salary_split),
+            salaryDay5Amount:Number(e.salary_day5_amount||0), salaryDay20Amount:Number(e.salary_day20_amount||0),
+            integralPaymentDay:e.integral_payment_day||"", status:e.is_active?"ativo":"inativo",
             createdAt:e.created_at, source:"api" };
     }
     async function syncRemoteEmployees() {
@@ -54,11 +60,13 @@
     function mapRemotePeriod(p) {
         return { id:p.id, month:p.month, status:p.status, items:(p.items||[]).map(i=>({
             id:i.id, employeeId:i.employee_id, description:i.description, kind:i.kind,
-            amount:Number(i.amount||0), createdAt:i.created_at||null
+            amount:Number(i.amount||0), createdAt:i.created_at||null, dueDate:i.due_date||null,
+            source:i.source||"manual", approved:Boolean(i.approved), paymentId:i.payment_id||null,
+            extraCategory:i.extra_category||null
         })), approvedAt:p.approved_at, createdAt:p.created_at, source:"api" };
     }
     function mapRemotePayment(p) {
-        return { id:p.id, month:p.month, employeeId:p.employee_id, type:p.payment_type,
+        return { id:p.id, month:p.month, employeeId:p.employee_id, sourceItemId:p.source_item_id||null, type:p.payment_type,
             amount:Number(p.amount||0), dueDate:p.due_date, status:p.status, paidAt:p.paid_at,
             method:p.method||"", createdAt:p.created_at, source:"api" };
     }
@@ -70,6 +78,8 @@
             return;
         }
         try {
+            // Corrige vínculos órfãos criados por exclusões antigas antes de carregar a folha.
+            await auth.requestCompany("/payroll/periods/repair-stale-links", {method:"POST"});
             const [periodRows, paymentRows] = await Promise.all([
                 auth.requestCompany("/payroll/periods"),
                 auth.requestCompany("/payroll/payments")
@@ -90,10 +100,64 @@
     }
     const period = () => data.periods.find(p=>p.month===month);
     const costOf = p => (p?.items||[]).filter(i=>i.kind!=="desconto").reduce((s,i)=>s+Math.max(0,Number(i.amount)||0),0);
-    const monthCost = m => data.periods.filter(p=>p.month===m&&["aprovada","parcial","paga","fechada"].includes(p.status)).reduce((s,p)=>s+costOf(p),0);
+    const monthCost = m => data.periods.filter(p=>p.month===m).reduce((s,p)=>s+costOf(p),0);
     const paidTotal = () => data.payments.filter(p=>p.status==="pago").reduce((s,p)=>s+Number(p.amount||0),0);
     const paidInMonth = m => data.payments.filter(p=>p.status==="pago"&&String(p.paidAt||"").slice(0,7)===m).reduce((s,p)=>s+Number(p.amount||0),0);
 
+    const businessDay = d => d.getDay()!==0 && d.getDay()!==6;
+    const isoDate = d => d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+    function fifthBusinessDay(y,m){const d=new Date(y,m,1);let n=0;while(d.getMonth()===m){if(businessDay(d)&&++n===5)return isoDate(d);d.setDate(d.getDate()+1);}return isoDate(new Date(y,m+1,0));}
+    function dueDateFor(employee, cycle, periodMonth=month){
+        const [y,mm]=periodMonth.split("-").map(Number),m=mm-1;
+        if(cycle==="5o_dia_util")return fifthBusinessDay(y,m);
+        if(cycle==="dia_20")return isoDate(new Date(y,m,20));
+        if(cycle==="ultimo_dia_util"){const d=new Date(y,m+1,0);while(!businessDay(d))d.setDate(d.getDate()-1);return isoDate(d);}
+        if(cycle==="dia_30")return isoDate(new Date(y,m,30));
+        const match=String(employee.integralPaymentDay||"").match(/(?:dia\s*)?(\d{1,2})/i);
+        return match?isoDate(new Date(y,m,Math.min(Number(match[1]),new Date(y,m+1,0).getDate()))):isoDate(new Date(y,m,20));
+    }
+    async function generatePayroll(){
+        if(apiEmployeeState!=="connected"||apiRecordsState!=="connected"||!window.PRIMEAuth)return;
+        let current=period();
+        if(!current){
+            try{await window.PRIMEAuth.requestCompany("/payroll/periods",{method:"POST",body:JSON.stringify({month,status:"preparação",items:[]})});await syncRemoteRecords();current=period();}
+            catch(error){apiRecordsError=error?.message||"Não foi possível criar a competência da folha.";return;}
+        }
+        if(!current||current.status!=="preparação")return;
+        const [y,mm]=month.split("-").map(Number),start=month+"-01",end=isoDate(new Date(y,mm,0)),newItems=[];
+        for(const employee of active()){
+            if((employee.startDate&&employee.startDate>end)||(employee.contractEndDate&&employee.contractEndDate<start))continue;
+            const cycles=employee.salarySplit?[["5o_dia_util",Number(employee.salaryDay5Amount||0)],["dia_20",Number(employee.salaryDay20Amount||0)]]:[[employee.integralPaymentDay||"5o_dia_util",Number(employee.salary||0)]];
+            for(const [cycle,amount] of cycles){
+                const description=cycle==="5o_dia_util"?"Salário — 5º dia útil":cycle==="dia_20"?"Salário — dia 20":"Salário integral";
+                if(amount>0&&!(current.items||[]).some(i=>i.employeeId===employee.id&&i.description===description&&i.source==="salary_auto"))
+                    newItems.push({id:makeId(),employee_id:employee.id,description,kind:"provento/custo",amount,created_at:new Date().toISOString(),due_date:dueDateFor(employee,cycle),source:"salary_auto",approved:false,payment_id:null,extra_category:null});
+            }
+        }
+        if(newItems.length){
+            const items=[...(current.items||[]).map(i=>({id:i.id,employee_id:i.employeeId,description:i.description,kind:i.kind,amount:i.amount,created_at:i.createdAt||null,due_date:i.dueDate||null,source:i.source||"manual",approved:Boolean(i.approved),payment_id:i.paymentId||null,extra_category:i.extraCategory||null})),...newItems];
+            try{await window.PRIMEAuth.requestCompany("/payroll/periods/"+encodeURIComponent(current.id),{method:"PATCH",body:JSON.stringify({items})});await syncRemoteRecords();}
+            catch(error){apiRecordsError=error?.message||"Não foi possível gerar as parcelas da folha.";}
+        }
+    }
+    const style = document.createElement("style");
+    style.textContent = `
+        .payroll-modal-backdrop{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(3,9,22,.78);backdrop-filter:blur(6px)}
+        .payroll-modal-card{width:min(100%,480px);padding:28px;border:1px solid rgba(100,145,210,.25);border-radius:20px;background:#0d1729;color:#edf4ff;box-shadow:0 24px 80px rgba(0,0,0,.45)}
+        .payroll-modal-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:14px;background:rgba(48,113,225,.16);color:#69a2ff;margin-bottom:18px}
+        .payroll-modal-card h2{margin:0 0 8px;font-size:22px;color:#f4f7ff}
+        .payroll-modal-card>p{margin:0 0 20px;color:#aab9d0;line-height:1.55}
+        .payroll-modal-summary{display:grid;grid-template-columns:1fr auto;gap:8px 14px;padding:15px;margin-bottom:20px;border:1px solid rgba(130,160,205,.16);border-radius:12px;background:rgba(255,255,255,.025)}
+        .payroll-modal-summary span,.payroll-modal-card small{color:#91a4c0;font-size:12px}
+        .payroll-modal-summary strong{text-align:right;color:#eaf1ff}
+        .payroll-modal-card form>label{display:grid;gap:8px;font-weight:600;color:#dce7f8}
+        .payroll-modal-card input[type=date]{width:100%;min-height:44px;padding:10px 12px;border:1px solid #304563;border-radius:10px;background:#081222;color:#f4f7ff;color-scheme:dark;font:inherit}
+        .payroll-modal-card small{font-weight:400;line-height:1.5}
+        .payroll-modal-card .payroll-form-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:22px}
+        .payroll-modal-error{margin:12px 0 0;color:#ff9c9c;font-size:13px}
+        @media(max-width:520px){.payroll-modal-card{padding:22px 18px}.payroll-modal-card .payroll-form-actions>*{flex:1}}
+    `;
+    if(!document.querySelector("[data-payroll-modal-styles]")){style.setAttribute("data-payroll-modal-styles","");document.head.appendChild(style);}
     function render(target){ host=target; if(host) { draw(); syncAll().then(()=>{ if(host) draw(); }); } }
     function draw(){
         if(!host)return;
@@ -105,8 +169,9 @@
         (tab==="resumo"?summary(employees,p,pending):"")+(tab==="funcionarios"?employeeView():"")+(tab==="folha"?periodView(p):"")+(tab==="pagamentos"?paymentView():"");
         host.querySelector("[data-p-back]")?.addEventListener("click",()=>window.PRIMEPayroll.onBack?.());
         host.querySelectorAll("[data-p-tab]").forEach(b=>b.addEventListener("click",()=>{tab=b.dataset.pTab;draw();}));
-        host.querySelectorAll("[data-p-month]").forEach(i=>i.addEventListener("change",()=>{if(/^\d{4}-\d{2}$/.test(i.value))month=i.value;draw();}));
+        host.querySelectorAll("[data-p-month]").forEach(i=>i.addEventListener("change",async()=>{if(/^\d{4}-\d{2}$/.test(i.value))month=i.value;await syncAll();draw();}));
         bindForms();
+        host.querySelectorAll("[data-p-generate]").forEach(button=>button.addEventListener("click",()=>handleGeneratePayroll(button)));
         if(window.lucide)window.lucide.createIcons();
     }
     function summary(emps,p,pending){
@@ -116,50 +181,195 @@
         '<div class="payroll-panel"><h2>Limites desta versão</h2><p class="payroll-muted">Rubricas manuais não equivalem a cálculo oficial. INSS, IRRF, FGTS, férias, décimo terceiro, rescisões, permissões e backend seguro ainda precisam de implementação e validação especializada.</p></div>';
     }
     function employeeView(){
-        return '<div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>Novo colaborador</h2><p>Novos cadastros são enviados à API autenticada da transportadora. Não informe dados bancários nesta etapa.</p></div></div>'+
-        '<form class="payroll-form" id="p-employee"><label>Nome completo<input name="name" required maxlength="140"></label><label>CPF/CNPJ (opcional)<input name="taxId" maxlength="24"></label><label>Vínculo<select name="type"><option>CLT</option><option>PJ</option><option value="outro">Outro</option></select></label><label>Cargo/função<input name="role" maxlength="100"></label><label>Setor<input name="department" maxlength="100"></label><label>Centro de custo<input name="costCenter" maxlength="100"></label><label>Início do vínculo<input type="date" name="startDate" required value="'+today()+'"></label><label>Remuneração mensal (R$)<input type="number" name="salary" min="0" step="0.01" required value="0"></label><label>Situação<select name="status"><option value="ativo">Ativo</option><option value="inativo">Inativo</option></select></label><div class="payroll-form-actions"><button class="button-primary" type="submit">Salvar funcionário</button></div></form></div>'+
+        const editingEmployee = editingEmployeeId ? allEmployees().find(e=>String(e.id)===String(editingEmployeeId)) : null;
+        const selected = (actual, expected) => String(actual ?? "") === String(expected ?? "") ? " selected" : "";
+        const split = Boolean(editingEmployee?.salarySplit);
+        const storedIntegralDay = editingEmployee?.integralPaymentDay || "";
+        const knownIntegralDays = ["5o_dia_util","dia_20","ultimo_dia_util","dia_30"];
+        const integralDay = knownIntegralDays.includes(storedIntegralDay) ? storedIntegralDay : (storedIntegralDay ? "outro" : "5o_dia_util");
+        const integralDayOther = storedIntegralDay && !knownIntegralDays.includes(storedIntegralDay) ? storedIntegralDay : "";
+        return '<div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>'+(editingEmployee?'Editar colaborador':'Novo colaborador')+'</h2><p>'+(editingEmployee?'Atualize os dados do cadastro existente. O histórico da folha e dos pagamentos será preservado.':'Preencha os dados pessoais, contratuais e a programação de pagamento do colaborador.')+'</p></div></div>'+
+        '<form class="payroll-form" id="p-employee">'+
+        '<label>Nome completo<input name="name" required maxlength="180" value="'+esc(editingEmployee?.name||"")+'"></label>'+
+        '<label>CPF ou CNPJ<input name="taxId" maxlength="20" value="'+esc(editingEmployee?.taxId||"")+'" placeholder="Digite CPF ou CNPJ"></label>'+
+        '<label>Telefone<input name="phone" maxlength="30" value="'+esc(editingEmployee?.phone||"")+'" placeholder="(00) 00000-0000"></label>'+
+        '<label>Estado civil<select name="maritalStatus"><option value="">Selecione</option><option value="solteiro"'+selected(editingEmployee?.maritalStatus,"solteiro")+'>Solteiro(a)</option><option value="casado"'+selected(editingEmployee?.maritalStatus,"casado")+'>Casado(a)</option><option value="viuvo"'+selected(editingEmployee?.maritalStatus,"viuvo")+'>Viúvo(a)</option><option value="divorciado"'+selected(editingEmployee?.maritalStatus,"divorciado")+'>Divorciado(a)</option><option value="separado"'+selected(editingEmployee?.maritalStatus,"separado")+'>Separado(a)</option></select></label>'+
+        '<label>Endereço<input name="address" maxlength="180" value="'+esc(editingEmployee?.address||"")+'" placeholder="Rua, avenida, etc."></label>'+
+        '<label>Número do endereço<input name="addressNumber" maxlength="30" value="'+esc(editingEmployee?.addressNumber||"")+'"></label>'+
+        '<label>CEP<input name="postalCode" maxlength="9" value="'+esc(editingEmployee?.postalCode||"")+'" placeholder="00000-000"></label>'+
+        '<label>Cidade<input name="city" maxlength="100" value="'+esc(editingEmployee?.city||"")+'"></label>'+
+        '<label>Estado (UF)<input name="state" maxlength="2" value="'+esc(editingEmployee?.state||"")+'" placeholder="PR"></label>'+
+        '<label>Cargo<input name="role" maxlength="120" value="'+esc(editingEmployee?.role||"")+'"></label>'+
+        '<label>Setor<input name="department" maxlength="100" value="'+esc(editingEmployee?.department||"")+'"></label>'+
+        '<label>Centro de custo<input name="costCenter" maxlength="100" value="'+esc(editingEmployee?.costCenter||"")+'"></label>'+
+        '<label>Vínculo<select name="type"><option value="CLT"'+selected(editingEmployee?.type,"CLT")+'>CLT</option><option value="PJ"'+selected(editingEmployee?.type,"PJ")+'>PJ</option><option value="Temporário"'+selected(editingEmployee?.type,"Temporário")+'>Temporário</option><option value="Estágio"'+selected(editingEmployee?.type,"Estágio")+'>Estágio</option><option value="Outro"'+selected(editingEmployee?.type,"Outro")+'>Outro</option></select></label>'+
+        '<label>Início do contrato<input type="date" name="startDate" required value="'+esc(editingEmployee?.startDate||today())+'"></label>'+
+        '<label>Fim do contrato (se dispensado)<input type="date" name="contractEndDate" value="'+esc(editingEmployee?.contractEndDate||"")+'"></label>'+
+        '<label>Remuneração mensal (R$)<input type="number" name="salary" min="0" step="0.01" required value="'+esc(editingEmployee ? editingEmployee.salary : 0)+'"></label>'+
+        '<label>Dividir o salário em 5º dia útil e dia 20?<select name="salarySplit"><option value="nao"'+selected(split,false)+'>Não — pagamento integral</option><option value="sim"'+selected(split,true)+'>Sim — dividir em duas parcelas</option></select></label>'+
+        '<div data-salary-split-fields style="'+(split?"":"display:none;")+'"><label>Valor pago no 5º dia útil (R$)<input type="number" name="salaryDay5Amount" min="0" step="0.01" value="'+esc(editingEmployee?.salaryDay5Amount??0)+'"></label><label>Valor pago no dia 20 (R$)<input type="number" name="salaryDay20Amount" min="0" step="0.01" value="'+esc(editingEmployee?.salaryDay20Amount??0)+'"></label><p class="payroll-muted">A soma das duas parcelas deve ser igual à remuneração mensal.</p></div>'+
+        '<div data-integral-payment-fields style="'+(split?"display:none;":"")+'"><label>Quando será pago o salário integral?<select name="integralPaymentDay"><option value="5o_dia_util"'+selected(integralDay,"5o_dia_util")+'>5º dia útil</option><option value="dia_20"'+selected(integralDay,"dia_20")+'>Dia 20</option><option value="ultimo_dia_util"'+selected(integralDay,"ultimo_dia_util")+'>Último dia útil do mês</option><option value="dia_30"'+selected(integralDay,"dia_30")+'>Dia 30</option><option value="outro"'+selected(integralDay,"outro")+'>Outro dia</option></select></label><label data-integral-other-field style="'+(integralDay==="outro"?"":"display:none;")+'">Informe o dia ou regra de pagamento<input name="integralPaymentDayOther" maxlength="40" value="'+esc(integralDayOther)+'" placeholder="Ex.: todo dia 10"></label></div>'+
+        '<label>Situação do cadastro<select name="status"><option value="ativo"'+selected(editingEmployee?.status,"ativo")+'>Ativo</option><option value="inativo"'+selected(editingEmployee?.status,"inativo")+'>Inativo</option></select></label>'+
+        '<div class="payroll-form-actions"><button class="button-primary" type="submit">'+(editingEmployee?'Salvar alterações':'Salvar funcionário')+'</button>'+(editingEmployee?'<button class="button-secondary" type="button" data-p-employee-cancel>Cancelar</button>':'')+'</div></form></div>'+
         '<div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>Colaboradores cadastrados</h2><p>'+allEmployees().length+' registro(s), incluindo inativos.</p></div></div>'+
-        (allEmployees().length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Nome</th><th>Vínculo</th><th>Função/setor</th><th>Remuneração</th><th>Situação</th><th>Origem</th><th></th></tr></thead><tbody>'+allEmployees().map(e=>'<tr><td><strong>'+esc(e.name)+'</strong><small>'+esc(e.taxId||"Documento não informado")+'</small></td><td>'+esc(e.type)+'</td><td>'+esc(e.role||"—")+'<small>'+esc(e.department||"—")+'</small></td><td>'+money(e.salary)+'</td><td>'+esc(e.status)+'</td><td>'+((e.source==="api")?"Backend":"Local (legado)")+'</td><td><button type="button" class="button-secondary payroll-small-button" '+(e.source==="api"?'data-p-api-toggle="'+esc(e.id)+'"':'data-p-toggle="'+esc(e.id)+'"')+'>'+(e.status==="ativo"?"Inativar":"Reativar")+'</button></td></tr>').join('')+'</tbody></table></div>':'<div class="payroll-empty">Nenhum colaborador cadastrado.</div>')+'</div>';
+        (allEmployees().length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Nome</th><th>Vínculo</th><th>Função/setor</th><th>Remuneração</th><th>Pagamento</th><th>Situação</th><th>Ações</th></tr></thead><tbody>'+allEmployees().map(e=>'<tr><td><strong>'+esc(e.name)+'</strong><small>'+esc(e.taxId||"Documento não informado")+'</small><small>'+esc(e.phone||"Telefone não informado")+'</small></td><td>'+esc(e.type)+'</td><td>'+esc(e.role||"—")+'<small>'+esc(e.department||"—")+'</small></td><td>'+money(e.salary)+'</td><td>'+esc(e.salarySplit?("5º útil: "+money(e.salaryDay5Amount)+" / Dia 20: "+money(e.salaryDay20Amount)):(e.integralPaymentDay==="5o_dia_util"?"5º dia útil":e.integralPaymentDay==="dia_20"?"Dia 20":e.integralPaymentDay==="ultimo_dia_util"?"Último dia útil":e.integralPaymentDay==="dia_30"?"Dia 30":e.integralPaymentDay||"Não definido"))+'</td><td>'+esc(e.status)+'</td><td style="min-width:190px;white-space:normal"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button type="button" class="button-secondary payroll-small-button" data-p-employee-edit="'+esc(e.id)+'">Editar</button><button type="button" class="button-secondary payroll-small-button" data-p-employee-delete="'+esc(e.id)+'">Excluir</button></div></td></tr>').join('')+'</tbody></table></div>':'<div class="payroll-empty">Nenhum colaborador cadastrado.</div>')+'</div>';
     }
     function periodView(p){
-        if(!p)return '<div class="payroll-toolbar"><label>Competência <input type="month" data-p-month value="'+esc(month)+'"></label></div><div class="payroll-panel"><h2>Preparar competência</h2><p class="payroll-muted">Adicione rubricas manuais. Nenhuma alíquota legal será presumida.</p><button type="button" class="button-primary" data-p-create>Criar folha da competência</button></div>';
-        const approved=["aprovada","parcial","paga","fechada"].includes(p.status);
-        return '<div class="payroll-toolbar"><label>Competência <input type="month" data-p-month value="'+esc(month)+'"></label><span class="payroll-status">Status: '+esc(p.status)+'</span></div><div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>Folha '+esc(month)+'</h2><p>Rubricas manuais com origem rastreável.</p></div><strong class="payroll-period-total">'+money(costOf(p))+'</strong></div>'+
-        (p.items.length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Funcionário</th><th>Rubrica</th><th>Tipo</th><th>Valor</th><th></th></tr></thead><tbody>'+p.items.map(i=>'<tr><td>'+esc(employeeById(i.employeeId)?.name||"Colaborador removido")+'</td><td>'+esc(i.description)+'</td><td>'+esc(i.kind)+'</td><td>'+money(i.amount)+'</td><td>'+(approved?'—':'<button type="button" class="button-secondary payroll-small-button" data-p-remove="'+esc(i.id)+'">Excluir</button>')+'</td></tr>').join('')+'</tbody></table></div>':'<div class="payroll-empty">Nenhuma rubrica cadastrada.</div>')+
-        (!approved?'<form class="payroll-form" id="p-item"><label>Funcionário<select name="employeeId" required>'+active().map(e=>'<option value="'+esc(e.id)+'">'+esc(e.name)+'</option>').join('')+'</select></label><label>Descrição<input name="description" required maxlength="120" placeholder="Salário, comissão, benefício..."></label><label>Tipo<select name="kind"><option value="provento/custo">Provento/custo</option><option value="desconto">Desconto</option></select></label><label>Valor (R$)<input type="number" name="amount" min="0.01" step="0.01" required></label><div class="payroll-form-actions"><button class="button-primary" type="submit" '+(active().length?'':'disabled')+'>Adicionar rubrica</button></div></form><div class="payroll-actions"><button type="button" class="button-primary" data-p-approve>Aprovar valores manuais</button></div>':'<p class="payroll-muted">Competência aprovada. Reabertura controlada será implementada em etapa posterior.</p>')+'</div>';
+        if(!p)return '<div class="payroll-toolbar"><label>Competência <input type="month" data-p-month value="'+esc(month)+'"></label></div><div class="payroll-panel"><h2>Folha mensal ainda não gerada</h2><p class="payroll-muted">O PRIME não calculará nem criará rubricas automaticamente. Confira os cadastros e clique abaixo quando quiser gerar a folha desta competência.</p><button type="button" class="button-primary" data-p-generate><i data-lucide="calculator"></i> Gerar folha de pagamento</button></div>';
+        const currentDay=Number(today().slice(8,10)),cycle=currentDay<10?"5o_dia_util":"dia_20";
+        const dueItems=(p.items||[]).filter(i=>{
+            if(i.source==="salary_auto")return cycle==="5o_dia_util"?i.description==="Salário — 5º dia útil"||i.description==="Salário integral"&&String(i.dueDate||"").slice(8,10)<="10":i.description==="Salário — dia 20"||i.description==="Salário integral"&&String(i.dueDate||"").slice(8,10)>="10";
+            return !i.dueDate||String(i.dueDate).slice(0,7)===month;
+        });
+        const groups=new Map();
+        dueItems.forEach(i=>{
+            const key=String(i.employeeId||("item-"+i.id))+"|"+String(i.dueDate||month+"-20").slice(0,10);
+            if(!groups.has(key))groups.set(key,[]);
+            groups.get(key).push(i);
+        });
+        const rows=[...groups.values()].map(items=>({items,employee:employeeById(items[0].employeeId),date:items[0].dueDate||month+"-20",total:items.reduce((sum,i)=>sum+(i.kind==="desconto"?-1:1)*Math.max(0,Number(i.amount)||0),0),sent:items.every(i=>Boolean(i.paymentId)||Boolean(i.approved)),pending:items.filter(i=>!i.paymentId&&!i.approved)}));
+        return '<div class="payroll-toolbar"><label>Competência <input type="month" data-p-month value="'+esc(month)+'"></label><span class="payroll-status">Data do período: '+formatFullDate(cycle==="5o_dia_util"?fifthBusinessDay(Number(month.slice(0,4)),Number(month.slice(5,7))-1):month+"-20")+' · Ciclo: '+(currentDay<10?"5º dia útil":"Dia 20")+'</span><span class="payroll-status">Status: '+esc(p.status)+'</span></div><div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>Folha — '+esc(formatFullDate(cycle==="5o_dia_util"?fifthBusinessDay(Number(month.slice(0,4)),Number(month.slice(5,7))-1):month+"-20"))+'</h2><p>Total previsto para o período, incluindo custos ainda não aprovados.</p></div><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><strong class="payroll-period-total">'+money(rows.reduce((sum,row)=>sum+row.total,0))+'</strong><button type="button" class="button-primary" data-p-generate><i data-lucide="calculator"></i> Gerar folha de pagamento</button></div></div>'+
+        (rows.length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Funcionário</th><th>Rubricas</th><th>Vencimento</th><th>Valor total</th><th>Situação</th><th>Ações</th></tr></thead><tbody>'+rows.map(row=>{
+            const {items,employee,date,total,sent,pending}=row;
+            const base=items.find(i=>i.source==="salary_auto")||items[0];
+            const descriptions=items.map(i=>i.description);
+            const groupIds=pending.map(i=>i.id).join(","),rowIds=items.map(i=>i.id).join(",");
+            const editable=items.some(i=>!i.paymentId&&!i.approved);
+            return '<tr><td><strong>'+esc(employee?.name||"Colaborador")+'</strong><small>'+esc(employee?.role||employee?.department||"")+'</small></td><td>'+descriptions.map(esc).join(" + ")+'</td><td>'+formatFullDate(date)+'</td><td>'+money(total)+'</td><td>'+(sent?"Enviado para pagamento":pending.length<items.length?"Parcialmente enviado":"Previsto — não aprovado")+'</td><td><div style="display:flex;gap:6px;flex-wrap:wrap">'+(editable?'<button type="button" class="button-secondary payroll-small-button" data-p-extra-toggle="'+esc(base.id)+'">Adicionar custo extra</button><button type="button" class="button-primary payroll-small-button" data-p-send-group="'+esc(groupIds)+'">Aprovar e enviar para pagamento</button>':'')+(pending.length?'<button type="button" class="button-secondary payroll-small-button" data-p-delete-row="'+esc(groupIds)+'">Excluir da folha</button>':'')+(!items.some(i=>i.paymentId)?'<button type="button" class="button-secondary payroll-small-button" data-p-delete-program="'+esc(rowIds)+'">Excluir programação</button>':'')+'<button type="button" class="button-secondary payroll-small-button" data-p-edit-toggle="'+esc(base.id)+'">Editar</button></div></td></tr>'+
+            '<tr><td colspan="6"><form class="payroll-form" data-p-edit-form="'+esc(base.id)+'" style="display:none;padding:14px"><strong>Editar valores — '+esc(employee?.name||"Colaborador")+'</strong>'+items.map(i=>{
+                const canEdit=!i.paymentId&&!i.approved;
+                return '<div style="display:grid;grid-template-columns:minmax(140px,1fr) minmax(120px,180px) auto;gap:10px;align-items:end;margin-top:10px"><label>'+esc(i.description)+'<input type="number" min="0" step="0.01" name="amount-'+esc(i.id)+'" value="'+esc(i.amount)+'" '+(canEdit?'':'disabled')+'></label><span class="payroll-muted" style="padding-bottom:10px">'+(i.source==="extra_cost"?"Custo extra":"Salário")+(canEdit?"":" · já enviado")+'</span>'+(i.source==="extra_cost"&&canEdit?'<button type="button" class="button-secondary payroll-small-button" data-p-delete-extra="'+esc(i.id)+'">Excluir custo</button>':'')+'</div>';
+            }).join("")+'<div class="payroll-form-actions"><button type="submit" class="button-primary" '+(editable?'':'disabled')+'>Salvar alterações</button><button type="button" class="button-secondary" data-p-edit-cancel="'+esc(base.id)+'">Fechar</button></div><p class="payroll-muted">Só é possível alterar ou excluir valores que ainda não foram enviados para pagamento.</p></form></td></tr>'+
+            (!sent&&base?'<tr><td colspan="6"><form class="payroll-form" data-p-extra-form="'+esc(base.id)+'" style="display:none;padding:12px"><label>Tipo de custo<select name="category" required><option value="VR">VR</option><option value="VA">VA</option><option value="AUX MERCADO">Auxílio mercado</option><option value="AUX FARMÁCIA">Auxílio farmácia</option><option value="OUTROS">Outros</option></select></label><label>Valor extra (R$)<input name="amount" type="number" min="0.01" step="0.01" required></label><label data-extra-description-wrap style="display:none">Descreva o custo<input name="description" maxlength="120" placeholder="Descreva o custo"></label><div class="payroll-form-actions"><button type="submit" class="button-primary">Adicionar custo extra</button></div></form></td></tr>':"");
+        }).join("")+'</tbody></table></div>':'<div class="payroll-empty">Nenhum funcionário tem parcela prevista neste ciclo.</div>')+
+'</div>';
     }
-    function paymentView(){
+        function paymentView(){
         return '<div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>Registrar pagamento</h2><p>Adiantamento, saldo salarial ou outro pagamento. Só marque como pago após a saída efetiva do dinheiro.</p></div></div><form class="payroll-form" id="p-payment"><label>Competência<input type="month" name="month" required value="'+esc(month)+'"></label><label>Funcionário<select name="employeeId" required>'+active().map(e=>'<option value="'+esc(e.id)+'">'+esc(e.name)+'</option>').join('')+'</select></label><label>Tipo<select name="type"><option value="adiantamento">Adiantamento (dia 20)</option><option value="saldo">Saldo salarial (5º dia útil)</option><option value="outro">Outro</option></select></label><label>Valor (R$)<input name="amount" type="number" min="0.01" step="0.01" required></label><label>Vencimento<input name="dueDate" type="date" required></label><label>Situação<select name="status"><option value="pendente">Pendente</option><option value="pago">Pago</option></select></label><label>Data efetiva<input name="paidAt" type="date" value="'+today()+'"></label><label>Método<input name="method" maxlength="60" placeholder="PIX, transferência..."></label><div class="payroll-form-actions"><button class="button-primary" type="submit" '+(active().length?'':'disabled')+'>Registrar pagamento</button></div></form></div>'+
         '<div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>Histórico de pagamentos</h2><p>'+data.payments.length+' registro(s). Pagamentos não são apagados ao reprocessar folhas.</p></div></div>'+
-        (data.payments.length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Competência</th><th>Funcionário</th><th>Tipo</th><th>Vencimento</th><th>Valor</th><th>Status</th></tr></thead><tbody>'+[...data.payments].sort((a,b)=>(b.dueDate||"").localeCompare(a.dueDate||"")).map(p=>'<tr><td>'+esc(p.month)+'</td><td>'+esc(employeeById(p.employeeId)?.name||"Colaborador")+'</td><td>'+esc(p.type)+'</td><td>'+esc(p.dueDate)+'</td><td>'+money(p.amount)+'</td><td>'+esc(p.status)+(p.status!=="pago"?' <button type="button" class="button-secondary payroll-small-button" data-p-paid="'+esc(p.id)+'">Marcar pago</button>':'')+'</td></tr>').join('')+'</tbody></table></div>':'<div class="payroll-empty">Nenhum pagamento registrado.</div>')+'</div>';
+        (data.payments.length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Competência</th><th>Funcionário</th><th>Tipo</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead><tbody>'+[...data.payments].sort((a,b)=>(b.dueDate||"").localeCompare(a.dueDate||"")).map(p=>'<tr><td>'+esc(p.month)+'</td><td>'+esc(employeeById(p.employeeId)?.name||"Colaborador")+'</td><td>'+esc(p.type)+'</td><td>'+esc(p.dueDate)+'</td><td>'+money(p.amount)+'</td><td>'+esc(p.status)+'</td><td style="min-width:220px;white-space:normal"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +(p.status!=="pago"?'<button type="button" class="button-secondary payroll-small-button" data-p-paid="'+esc(p.id)+'">Pagar</button>':'<button type="button" class="button-secondary payroll-small-button" data-p-reverse="'+esc(p.id)+'">Estornar</button>')+'<button type="button" class="button-secondary payroll-small-button" data-p-edit="'+esc(p.id)+'">Editar</button><button type="button" class="button-secondary payroll-small-button" data-p-delete="'+esc(p.id)+'">Excluir</button></div></td></tr>').join('')+'</tbody></table></div>':'<div class="payroll-empty">Nenhum pagamento registrado.</div>')+'</div>';
+    }
+    async function handleGeneratePayroll(button){
+        if(!window.PRIMEAuth){alert("Entre na conta da transportadora antes de gerar a folha.");return;}
+        if(apiEmployeeState!=="connected"||apiRecordsState!=="connected"){
+            alert("Aguarde a conexão com o backend e tente novamente.");
+            return;
+        }
+        const current=period();
+        if(current && current.status!=="preparação"){
+            alert("Esta competência não está em preparação. Não é possível gerar ou alterar a folha aprovada.");
+            return;
+        }
+        const employeeCount=active().length;
+        if(!employeeCount){alert("Cadastre ao menos um funcionário ativo antes de gerar a folha.");return;}
+        if(!confirm("Gerar a folha de pagamento da competência "+month+" com base nos salários cadastrados dos funcionários ativos? A ação não envia pagamentos; isso será feito separadamente."))return;
+        button.disabled=true;button.textContent="Calculando folha...";
+        try{
+            await generatePayroll();
+            await syncAll();
+            draw();
+            const updated=period();
+            if(updated && updated.items.length){
+                alert("Folha de pagamento gerada para "+month+". Confira os valores e rubricas antes de aprovar e enviar para pagamento.");
+            }else{
+                alert("A folha não gerou rubricas. Confira os salários cadastrados e a situação dos funcionários.");
+            }
+        }catch(error){
+            alert(error?.message||"Não foi possível gerar a folha de pagamento.");
+        }finally{
+            if(button.isConnected)button.disabled=false;
+        }
     }
     function bindForms(){
-        $("#p-employee",host)?.addEventListener("submit", async e=>{
+        const employeeForm=$("#p-employee",host);
+        employeeForm?.querySelector('[name="salarySplit"]')?.addEventListener("change",e=>{
+            const split=e.currentTarget.value==="sim";
+            const splitFields=employeeForm.querySelector("[data-salary-split-fields]");
+            const integralFields=employeeForm.querySelector("[data-integral-payment-fields]");
+            if(splitFields)splitFields.style.display=split?"":"none";
+            if(integralFields)integralFields.style.display=split?"none":"";
+        });
+        employeeForm?.querySelector('[name="integralPaymentDay"]')?.addEventListener("change",e=>{
+            const field=employeeForm.querySelector("[data-integral-other-field]");
+            if(field)field.style.display=e.currentTarget.value==="outro"?"":"none";
+        });
+        employeeForm?.querySelector('[name="state"]')?.addEventListener("input",e=>{e.currentTarget.value=e.currentTarget.value.toUpperCase().replace(/[^A-Z]/g,"").slice(0,2);});
+        employeeForm?.querySelector('[name="postalCode"]')?.addEventListener("input",e=>{
+            const digits=e.currentTarget.value.replace(/\D/g,"").slice(0,8);
+            e.currentTarget.value=digits.length>5?digits.slice(0,5)+"-"+digits.slice(5):digits;
+        });
+        employeeForm?.addEventListener("submit", async e=>{
             e.preventDefault();
             const form=e.currentTarget, submit=form.querySelector('button[type="submit"]'), f=new FormData(form);
             const name=String(f.get("name")||"").trim();
             if(!name || !window.PRIMEAuth) return;
-            if(submit){submit.disabled=true;submit.textContent="Salvando...";}
+            const salary=Number(f.get("salary")||0), salarySplit=String(f.get("salarySplit")||"nao")==="sim";
+            const day5=salarySplit?Number(f.get("salaryDay5Amount")||0):0;
+            const day20=salarySplit?Number(f.get("salaryDay20Amount")||0):0;
+            if(salarySplit && Math.round((day5+day20)*100)!==Math.round(salary*100)){
+                alert("A soma do 5º dia útil e do dia 20 deve ser igual à remuneração mensal.");
+                return;
+            }
+            const integralChoice=String(f.get("integralPaymentDay")||"5o_dia_util");
+            const integralDay=salarySplit?null:(integralChoice==="outro"?String(f.get("integralPaymentDayOther")||"").trim():integralChoice);
+            if(!salarySplit && !integralDay){alert("Informe o dia do pagamento integral.");return;}
+            const startDate=String(f.get("startDate")||"");
+            const contractEndDate=String(f.get("contractEndDate")||"")||null;
+            if(contractEndDate && contractEndDate<startDate){alert("O fim do contrato não pode ser anterior ao início.");return;}
+            if(submit){submit.disabled=true;submit.textContent=editingEmployeeId?"Salvando alterações...":"Salvando...";}
             const payload={
                 name, tax_id:String(f.get("taxId")||"").trim()||null,
-                employment_type:String(f.get("type")||"CLT"), role:String(f.get("role")||"").trim()||null,
-                department:String(f.get("department")||"").trim()||null, cost_center:String(f.get("costCenter")||"").trim()||null,
-                start_date:String(f.get("startDate")), salary:Number(f.get("salary")||0),
+                phone:String(f.get("phone")||"").trim()||null,
+                address:String(f.get("address")||"").trim()||null,
+                address_number:String(f.get("addressNumber")||"").trim()||null,
+                postal_code:String(f.get("postalCode")||"").trim()||null,
+                city:String(f.get("city")||"").trim()||null,
+                state:String(f.get("state")||"").trim().toUpperCase()||null,
+                marital_status:String(f.get("maritalStatus")||"")||null,
+                employment_type:String(f.get("type")||"CLT"),
+                role:String(f.get("role")||"").trim()||null,
+                department:String(f.get("department")||"").trim()||null,
+                cost_center:String(f.get("costCenter")||"").trim()||null,
+                start_date:startDate, contract_end_date:contractEndDate,
+                salary, salary_split:salarySplit, salary_day5_amount:day5,
+                salary_day20_amount:day20, integral_payment_day:integralDay,
                 is_active:String(f.get("status")||"ativo")==="ativo"
             };
             try{
-                await window.PRIMEAuth.requestCompany("/payroll/employees",{method:"POST",body:JSON.stringify(payload)});
-                await syncAll(); form.reset(); draw();
+                if(editingEmployeeId){
+                    await window.PRIMEAuth.requestCompany("/payroll/employees/"+encodeURIComponent(editingEmployeeId),{method:"PATCH",body:JSON.stringify(payload)});
+                }else{
+                    await window.PRIMEAuth.requestCompany("/payroll/employees",{method:"POST",body:JSON.stringify(payload)});
+                }
+                editingEmployeeId=null;
+                await syncAll();
+                form.reset();
+                draw();
             }catch(error){alert(error.message||"Não foi possível salvar o funcionário no backend.");}
-            finally{if(submit){submit.disabled=false;submit.textContent="Salvar funcionário";}}
+            finally{if(submit){submit.disabled=false;submit.textContent=editingEmployeeId?"Salvar alterações":"Salvar funcionário";}}
         });
-        host.querySelectorAll("[data-p-api-toggle]").forEach(b=>b.addEventListener("click",async()=>{
-            const employee=remoteEmployees.find(x=>x.id===b.dataset.pApiToggle); if(!employee||!window.PRIMEAuth)return;
-            const next=employee.status!=="ativo";
-            if(!confirm((next?"Reativar":"Inativar")+" este funcionário no backend?"))return;
+        host.querySelector("[data-p-employee-cancel]")?.addEventListener("click",()=>{editingEmployeeId=null;draw();});
+        host.querySelectorAll("[data-p-employee-edit]").forEach(b=>b.addEventListener("click",()=>{
+            const employee=allEmployees().find(x=>String(x.id)===String(b.dataset.pEmployeeEdit));
+            if(!employee){alert("Funcionário não encontrado. Atualize a lista e tente novamente.");return;}
+            editingEmployeeId=employee.id;
+            draw();
+            host.querySelector("#p-employee")?.scrollIntoView({behavior:"smooth",block:"start"});
+        }));
+        host.querySelectorAll("[data-p-employee-delete]").forEach(b=>b.addEventListener("click",async()=>{
+            const employee=remoteEmployees.find(x=>String(x.id)===String(b.dataset.pEmployeeDelete));
+            if(!employee||!window.PRIMEAuth)return;
+            if(!confirm("Excluir o cadastro de "+employee.name+"? Se houver histórico de folha ou pagamentos, a exclusão será bloqueada para proteger os registros financeiros."))return;
             b.disabled=true;
-            try{await window.PRIMEAuth.requestCompany("/payroll/employees/"+encodeURIComponent(employee.id)+"/status?is_active="+String(next),{method:"PATCH"});await syncAll();draw();}
-            catch(error){alert(error.message||"Falha ao atualizar funcionário.");b.disabled=false;}
+            try{
+                await window.PRIMEAuth.requestCompany("/payroll/employees/"+encodeURIComponent(employee.id),{method:"DELETE"});
+                await syncAll();
+                draw();
+                alert("Cadastro do funcionário excluído.");
+            }catch(error){
+                alert(error.message||"Não foi possível excluir o funcionário. Cadastros com histórico financeiro devem ser preservados.");
+                b.disabled=false;
+            }
         }));
         host.querySelector("[data-p-create]")?.addEventListener("click",async()=>{
             if(period())return;
@@ -173,7 +383,7 @@
             e.preventDefault();const current=period();if(!current||!active().length||!window.PRIMEAuth)return;
             const form=e.currentTarget,f=new FormData(form), amount=Number(f.get("amount")||0);
             const item={id:makeId(),employee_id:String(f.get("employeeId")),description:String(f.get("description")||"").trim(),kind:String(f.get("kind")),amount,created_at:new Date().toISOString()};
-            const items=[...current.items,item];
+            const items=[...current.items.map(i=>({id:i.id,employee_id:i.employeeId,description:i.description,kind:i.kind,amount:i.amount,created_at:i.createdAt||null,due_date:i.dueDate||null,source:i.source||"manual",approved:Boolean(i.approved),payment_id:i.paymentId||null,extra_category:i.extraCategory||null})),item];
             const submit=form.querySelector('button[type="submit"]');if(submit){submit.disabled=true;submit.textContent="Salvando...";}
             try{
                 await window.PRIMEAuth.requestCompany("/payroll/periods/"+encodeURIComponent(current.id),{method:"PATCH",body:JSON.stringify({items})});
@@ -181,6 +391,108 @@
             }catch(error){alert(error.message||"Não foi possível salvar a rubrica.");}
             finally{if(submit){submit.disabled=false;submit.textContent="Adicionar rubrica";}}
         });
+        host.querySelectorAll("[data-p-extra-toggle]").forEach(b=>b.addEventListener("click",()=>{
+            const form=host.querySelector('[data-p-extra-form="'+CSS.escape(b.dataset.pExtraToggle)+'"]');if(form)form.style.display=form.style.display==="none"?"":"none";
+        }));
+        host.querySelectorAll("[data-p-edit-toggle]").forEach(b=>b.addEventListener("click",()=>{
+            const form=host.querySelector('[data-p-edit-form="'+CSS.escape(b.dataset.pEditToggle)+'"]');if(form)form.style.display=form.style.display==="none"?"":"none";
+        }));
+        host.querySelectorAll("[data-p-edit-cancel]").forEach(b=>b.addEventListener("click",()=>{
+            const form=host.querySelector('[data-p-edit-form="'+CSS.escape(b.dataset.pEditCancel)+'"]');if(form)form.style.display="none";
+        }));
+        host.querySelectorAll("[data-p-delete-program]").forEach(b=>b.addEventListener("click",async()=>{
+            const current=period();
+            if(!current||!window.PRIMEAuth)return;
+            const ids=b.dataset.pDeleteProgram.split(",").filter(Boolean);
+            const selected=current.items.filter(i=>ids.includes(String(i.id)));
+            if(!selected.length)return;
+            if(selected.some(i=>i.paymentId)){
+                alert("Esta programação possui pagamento vinculado. Exclua primeiro o pagamento correspondente para liberar a programação.");
+                return;
+            }
+            const employeeName=employeeById(selected[0].employeeId)?.name||"este funcionário";
+            if(!confirm("Excluir a programação desta parcela de "+employeeName+" da folha de "+month+"? O cadastro do funcionário será mantido."))return;
+            try{
+                const removeIds=new Set(selected.map(i=>String(i.id)));
+                const items=current.items.filter(i=>!removeIds.has(String(i.id))).map(i=>({id:i.id,employee_id:i.employeeId,description:i.description,kind:i.kind,amount:i.amount,created_at:i.createdAt||null,due_date:i.dueDate||null,source:i.source||"manual",approved:Boolean(i.approved),payment_id:i.paymentId||null,extra_category:i.extraCategory||null}));
+                await window.PRIMEAuth.requestCompany("/payroll/periods/"+encodeURIComponent(current.id),{method:"PATCH",body:JSON.stringify({items})});
+                await syncRemoteRecords();draw();
+                alert("Programação excluída da folha mensal. O cadastro e os pagamentos já registrados foram preservados.");
+            }catch(error){alert(error.message||"Não foi possível excluir a programação.");}
+        }));
+        host.querySelectorAll("[data-p-delete-row]").forEach(b=>b.addEventListener("click",async()=>{
+            const current=period();
+            if(!current||!window.PRIMEAuth)return;
+            const ids=b.dataset.pDeleteRow.split(",").filter(Boolean);
+            const removable=current.items.filter(i=>ids.includes(String(i.id))&&!i.approved&&!i.paymentId);
+            if(!removable.length){alert("Não há itens pendentes que possam ser excluídos.");return;}
+            const employeeName=employeeById(removable[0].employeeId)?.name||"este funcionário";
+            if(!confirm("Excluir da folha mensal "+removable.length+" item(ns) pendente(s) de "+employeeName+"? Itens já enviados para pagamento serão preservados."))return;
+            try{
+                const removeIds=new Set(removable.map(i=>String(i.id)));
+                const items=current.items.filter(i=>!removeIds.has(String(i.id))).map(i=>({id:i.id,employee_id:i.employeeId,description:i.description,kind:i.kind,amount:i.amount,created_at:i.createdAt||null,due_date:i.dueDate||null,source:i.source||"manual",approved:Boolean(i.approved),payment_id:i.paymentId||null,extra_category:i.extraCategory||null}));
+                await window.PRIMEAuth.requestCompany("/payroll/periods/"+encodeURIComponent(current.id),{method:"PATCH",body:JSON.stringify({items})});
+                await syncRemoteRecords();draw();
+                alert("Itens pendentes excluídos da folha mensal. O cadastro do funcionário e o histórico de pagamentos foram preservados.");
+            }catch(error){alert(error.message||"Não foi possível excluir os itens da folha mensal.");}
+        }));
+        host.querySelectorAll("[data-p-delete-extra]").forEach(b=>b.addEventListener("click",async()=>{
+            const current=period(),id=b.dataset.pDeleteExtra,item=current?.items.find(i=>String(i.id)===String(id));
+            if(!current||!item||item.source!=="extra_cost"||item.approved||item.paymentId||!window.PRIMEAuth)return;
+            if(!confirm("Excluir o custo extra '"+item.description+"' ("+money(item.amount)+")?"))return;
+            try{
+                const items=current.items.filter(i=>String(i.id)!==String(id)).map(i=>({id:i.id,employee_id:i.employeeId,description:i.description,kind:i.kind,amount:i.amount,created_at:i.createdAt||null,due_date:i.dueDate||null,source:i.source||"manual",approved:Boolean(i.approved),payment_id:i.paymentId||null,extra_category:i.extraCategory||null}));
+                await window.PRIMEAuth.requestCompany("/payroll/periods/"+encodeURIComponent(current.id),{method:"PATCH",body:JSON.stringify({items})});await syncRemoteRecords();draw();
+            }catch(error){alert(error.message||"Não foi possível excluir o custo extra.");}
+        }));
+        host.querySelectorAll("[data-p-edit-form]").forEach(form=>form.addEventListener("submit",async e=>{
+            e.preventDefault();const current=period();if(!current||!window.PRIMEAuth)return;
+            const fd=new FormData(form),ids=[...form.querySelectorAll('input[name^="amount-"]')].map(input=>input.name.slice(7));
+            const changed=[];
+            for(const id of ids){
+                const item=current.items.find(i=>String(i.id)===String(id)),input=form.querySelector('[name="amount-'+CSS.escape(id)+'"]');
+                if(!item||!input||item.approved||item.paymentId)continue;
+                const amount=Number(fd.get(input.name));
+                if(!Number.isFinite(amount)||amount<0){alert("Informe valores válidos, iguais ou maiores que zero.");return;}
+                changed.push({id:item.id,amount});
+            }
+            if(!changed.length){alert("Não há valores pendentes para alterar.");return;}
+            const byId=new Map(changed.map(x=>[String(x.id),x.amount]));
+            const items=current.items.map(i=>({id:i.id,employee_id:i.employeeId,description:i.description,kind:i.kind,amount:byId.has(String(i.id))?byId.get(String(i.id)):i.amount,created_at:i.createdAt||null,due_date:i.dueDate||null,source:i.source||"manual",approved:Boolean(i.approved),payment_id:i.paymentId||null,extra_category:i.extraCategory||null}));
+            try{await window.PRIMEAuth.requestCompany("/payroll/periods/"+encodeURIComponent(current.id),{method:"PATCH",body:JSON.stringify({items})});await syncRemoteRecords();draw();alert("Valores atualizados. O total da folha foi recalculado.");}
+            catch(error){alert(error.message||"Não foi possível salvar as alterações.");}
+        }));
+        host.querySelectorAll("[data-p-extra-form]").forEach(form=>form.querySelector('[name="category"]')?.addEventListener("change",e=>{
+            const wrap=form.querySelector("[data-extra-description-wrap]");if(wrap)wrap.style.display=e.target.value==="OUTROS"?"":"none";
+        }));
+        host.querySelectorAll("[data-p-extra-form]").forEach(form=>form.addEventListener("submit",async e=>{
+            e.preventDefault();const current=period();if(!current||!window.PRIMEAuth)return;
+            const f=new FormData(form),category=String(f.get("category")||""),amount=Number(f.get("amount")||0),description=String(f.get("description")||"").trim();
+            if(!(amount>0)){alert("Informe um valor maior que zero.");return;}if(category==="OUTROS"&&!description){alert("Descreva o custo extra em Outros.");return;}
+            const base=current.items.find(i=>i.id===form.dataset.pExtraForm);if(!base)return;
+            const extra={id:makeId(),employee_id:base.employeeId,description:category==="OUTROS"?"Outros — "+description:category,kind:"provento/custo",amount,created_at:new Date().toISOString(),due_date:base.dueDate||month+"-20",source:"extra_cost",approved:false,payment_id:null,extra_category:category};
+            const items=[...current.items.map(i=>({id:i.id,employee_id:i.employeeId,description:i.description,kind:i.kind,amount:i.amount,created_at:i.createdAt||null,due_date:i.dueDate||null,source:i.source||"manual",approved:Boolean(i.approved),payment_id:i.paymentId||null,extra_category:i.extraCategory||null})),extra];
+            try{await window.PRIMEAuth.requestCompany("/payroll/periods/"+encodeURIComponent(current.id),{method:"PATCH",body:JSON.stringify({items})});await syncRemoteRecords();draw();}catch(error){alert(error.message||"Não foi possível salvar o custo extra.");}
+        }));
+        host.querySelectorAll("[data-p-send-group]").forEach(b=>b.addEventListener("click",async()=>{
+            const current=period(),ids=String(b.dataset.pSendGroup||"").split(",").filter(Boolean);
+            const items=(current?.items||[]).filter(i=>ids.includes(String(i.id))&&!i.paymentId&&!i.approved);
+            const employee=items.length&&employeeById(items[0].employeeId);
+            if(!current||!items.length||!employee||!window.PRIMEAuth)return;
+            const total=items.reduce((sum,i)=>sum+(i.kind==="desconto"?-1:1)*Math.max(0,Number(i.amount)||0),0);
+            if(!confirm("Aprovar os custos de "+employee.name+" ("+money(total)+") e enviar para Pagamentos?"))return;
+            b.disabled=true;
+            try{
+                const paymentsByItem=new Map();
+                for(const item of items){
+                    const payment=await window.PRIMEAuth.requestCompany("/payroll/payments",{method:"POST",body:JSON.stringify({source_item_id:item.id,month,employee_id:employee.id,payment_type:item.source==="extra_cost"?"beneficio":item.description.includes("5º dia útil")?"saldo":item.description.includes("dia 20")?"adiantamento":"outro",amount:Number(item.amount),due_date:item.dueDate||month+"-20",status:"pendente",paid_at:null,method:null})});
+                    paymentsByItem.set(item.id,payment.id);
+                }
+                const updated=current.items.map(i=>({id:i.id,employee_id:i.employeeId,description:i.description,kind:i.kind,amount:i.amount,created_at:i.createdAt||null,due_date:i.dueDate||null,source:i.source||"manual",approved:paymentsByItem.has(i.id)?true:Boolean(i.approved),payment_id:paymentsByItem.get(i.id)||i.paymentId||null,extra_category:i.extraCategory||null}));
+                await window.PRIMEAuth.requestCompany("/payroll/periods/"+encodeURIComponent(current.id),{method:"PATCH",body:JSON.stringify({items:updated})});
+                await syncRemoteRecords();tab="pagamentos";draw();
+            }catch(error){alert(error.message||"Não foi possível enviar os custos para pagamento.");b.disabled=false;await syncRemoteRecords();draw();}
+        }));
         host.querySelectorAll("[data-p-remove]").forEach(b=>b.addEventListener("click",async()=>{
             const current=period();if(!current||!confirm("Excluir esta rubrica da competência em preparação?")||!window.PRIMEAuth)return;
             try{
@@ -209,13 +521,99 @@
             }catch(error){alert(error.message||"Não foi possível registrar o pagamento no backend.");}
             finally{if(submit){submit.disabled=false;submit.textContent="Registrar pagamento";}}
         });
-        host.querySelectorAll("[data-p-paid]").forEach(b=>b.addEventListener("click",async()=>{
-            if(!confirm("Confirmar que o pagamento foi efetivamente realizado?")||!window.PRIMEAuth)return;
+        host.querySelectorAll("[data-p-paid]").forEach(b=>b.addEventListener("click",()=>{
+            if(!window.PRIMEAuth)return;
+            host.querySelector("[data-p-payment-modal]")?.remove();
+            const payment=data.payments.find(item=>String(item.id)===String(b.dataset.pPaid));
+            if(!payment)return;
+            const modal=document.createElement("div");
+            modal.setAttribute("data-p-payment-modal","");
+            modal.innerHTML='<div class="payroll-modal-backdrop" data-p-modal-close><section class="payroll-modal-card" role="dialog" aria-modal="true" aria-labelledby="p-payment-modal-title"><div class="payroll-modal-icon"><i data-lucide="calendar-check"></i></div><h2 id="p-payment-modal-title">Confirmar pagamento</h2><p>Informe quando o dinheiro realmente saiu da conta. Essa data será usada nos indicadores financeiros.</p><div class="payroll-modal-summary"><span>Colaborador</span><strong>'+esc(employeeById(payment.employeeId)?.name||"Colaborador")+'</strong><span>Valor do pagamento</span><strong>'+money(payment.amount)+'</strong></div><form data-p-paid-form><label>Data real do pagamento<input type="date" name="paidAt" required value="'+today()+'" max="'+today()+'"><small>Selecione a data no calendário. O sistema salvará no formato correto automaticamente.</small></label><div class="payroll-form-actions"><button type="button" class="button-secondary" data-p-modal-cancel>Cancelar</button><button type="submit" class="button-primary">Confirmar como pago</button></div><p class="payroll-modal-error" data-p-modal-error hidden></p></form></section></div>';
+            host.appendChild(modal);
+            if(window.lucide)window.lucide.createIcons();
+            const form=modal.querySelector("[data-p-paid-form]");
+            const close=()=>modal.remove();
+            modal.querySelector("[data-p-modal-close]")?.addEventListener("click",event=>{if(event.target===event.currentTarget)close();});
+            modal.querySelector("[data-p-modal-cancel]")?.addEventListener("click",close);
+            form.addEventListener("submit",async event=>{
+                event.preventDefault();
+                const paidAt=String(new FormData(form).get("paidAt")||"").trim();
+                const date=new Date(paidAt+"T12:00:00");
+                const error=modal.querySelector("[data-p-modal-error]");
+                if(!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(paidAt)||Number.isNaN(date.getTime())||date.toISOString().slice(0,10)!==paidAt){
+                    error.textContent="Selecione uma data válida.";error.hidden=false;return;
+                }
+                const submit=form.querySelector('button[type="submit"]');
+                submit.disabled=true;submit.textContent="Salvando...";
+                try{
+                    await window.PRIMEAuth.requestCompany("/payroll/payments/"+encodeURIComponent(payment.id),{method:"PATCH",body:JSON.stringify({status:"pago",paid_at:paidAt})});
+                    await syncRemoteRecords();draw();
+                }catch(err){
+                    error.textContent=err?.message||"Não foi possível atualizar o pagamento.";
+                    error.hidden=false;submit.disabled=false;submit.textContent="Confirmar como pago";
+                }
+            });
+            form.querySelector('[name="paidAt"]')?.focus();
+        }));
+        host.querySelectorAll("[data-p-edit]").forEach(b=>b.addEventListener("click",async()=>{
+            const p=data.payments.find(item=>String(item.id)===String(b.dataset.pEdit));
+            if(!p||!window.PRIMEAuth)return;
+            const month=prompt("Competência (AAAA-MM):",p.month||"");if(month===null)return;
+            const type=prompt("Tipo de pagamento:",p.type||"outro");if(type===null)return;
+            const amountText=prompt("Valor (R$):",String(p.amount??""));if(amountText===null)return;
+            const dueDate=prompt("Data de vencimento (AAAA-MM-DD):",p.dueDate||"");if(dueDate===null)return;
+            const status=prompt("Status (pendente ou pago):",p.status||"pendente");if(status===null)return;
+            if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month.trim())){alert("Competência inválida. Use AAAA-MM.");return;}
+            if(!/^\d{4}-\d{2}-\d{2}$/.test(dueDate.trim())){alert("Data inválida. Use AAAA-MM-DD.");return;}
+            const amount=Number(amountText.replace(",","."));if(!(amount>0)){alert("Informe um valor maior que zero.");return;}
+            if(!["pendente","pago"].includes(status.trim())){alert("Status deve ser pendente ou pago.");return;}
+            let paidAt=null;
+            if(status.trim()==="pago"){
+                paidAt=prompt("Data efetiva do pagamento (AAAA-MM-DD):",p.paidAt||today());if(paidAt===null)return;
+                if(!/^\d{4}-\d{2}-\d{2}$/.test(paidAt.trim())){alert("Data efetiva inválida.");return;}
+            }
+            const method=prompt("Método de pagamento (PIX, transferência etc.):",p.method||"");if(method===null)return;
             try{
-                await window.PRIMEAuth.requestCompany("/payroll/payments/"+encodeURIComponent(b.dataset.pPaid),{method:"PATCH",body:JSON.stringify({status:"pago",paid_at:today()})});
+                await window.PRIMEAuth.requestCompany("/payroll/payments/"+encodeURIComponent(p.id),{method:"PATCH",body:JSON.stringify({month:month.trim(),payment_type:type.trim()||"outro",amount,due_date:dueDate.trim(),status:status.trim(),paid_at:paidAt,method:method.trim()||null})});
                 await syncRemoteRecords();draw();
-            }catch(error){alert(error.message||"Não foi possível atualizar o pagamento.");}
+                alert("Pagamento atualizado. O Dashboard foi recalculado.");
+            }catch(error){alert(error.message||"Não foi possível editar o pagamento.");}
+        }));
+        host.querySelectorAll("[data-p-reverse]").forEach(b=>b.addEventListener("click",async()=>{
+            if(!confirm("Estornar este pagamento? Ele voltará para Pendente e o Dashboard será recalculado.")||!window.PRIMEAuth)return;
+            try{
+                await window.PRIMEAuth.requestCompany("/payroll/payments/"+encodeURIComponent(b.dataset.pReverse),{method:"PATCH",body:JSON.stringify({status:"pendente",paid_at:null})});
+                await syncRemoteRecords();draw();
+                alert("Pagamento estornado. O Dashboard foi atualizado.");
+            }catch(error){alert(error.message||"Não foi possível estornar o pagamento.");}
+        }));
+        host.querySelectorAll("[data-p-delete]").forEach(b=>b.addEventListener("click",async()=>{
+            if(!confirm("Excluir permanentemente este pagamento? A ação será registrada na auditoria e não poderá ser desfeita.")||!window.PRIMEAuth)return;
+            try{
+                await window.PRIMEAuth.requestCompany("/payroll/payments/"+encodeURIComponent(b.dataset.pDelete),{method:"DELETE"});
+                await syncRemoteRecords();draw();
+                alert("Pagamento excluído. O Dashboard foi atualizado.");
+            }catch(error){alert(error.message||"Não foi possível excluir o pagamento.");}
         }));
     }
-    window.PRIMEPayroll={render,getCompetencyCost:monthCost,getPaidPaymentsTotal:paidTotal,getPaidPaymentsInMonth:paidInMonth,getPendingPaymentsTotal:()=>data.payments.filter(p=>p.status!=="pago").reduce((s,p)=>s+Number(p.amount||0),0),onBack:null};
+    window.PRIMEPayroll={
+        render,
+        getCompetencyCost:monthCost,
+        // Total da folha ainda em aberto no mês, independentemente da data de vencimento.
+        getOutstandingCompetencyCost:(m)=>data.periods.filter(period=>m==null||period.month===m).reduce((sum,period)=>sum+(period.items||[]).reduce((itemSum,item)=>{
+            const linkedPayment=data.payments.find(payment=>String(payment.id)===String(item.paymentId||"")||String(payment.sourceItemId||"")===String(item.id));
+            if(linkedPayment&&linkedPayment.status==="pago")return itemSum;
+            return itemSum+Math.max(0,Number(item.amount)||0);
+        },0),0),
+        getPaidPaymentsTotal:paidTotal,
+        getPaidPaymentsInMonth:paidInMonth,
+        getPaidPaymentsThroughDate:(dateLimit)=>data.payments.filter(p=>{const paidDate=String(p.paidAt||p.dueDate||"").slice(0,10);return p.status==="pago"&&Boolean(paidDate)&&paidDate<=dateLimit;}).reduce((s,p)=>s+Number(p.amount||0),0),
+        getPendingPaymentsForDate:(date)=>data.payments.filter(p=>p.status!=="pago"&&String(p.dueDate||"").slice(0,10)===date).reduce((s,p)=>s+Number(p.amount||0),0)+data.periods.reduce((sum,p)=>sum+(p.items||[]).filter(i=>!i.approved&&!i.paymentId&&String(i.dueDate||"").slice(0,10)===date).reduce((s,i)=>s+Number(i.amount||0),0),0),
+        getPendingPaymentsTotal:(monthLimit)=>data.payments.filter(p=>p.status!=="pago"&&(!monthLimit||((p.dueDate&&String(p.dueDate).slice(0,7)<=monthLimit)||(!p.dueDate&&String(p.month||"")<=monthLimit)))).reduce((s,p)=>s+Number(p.amount||0),0)+data.periods.reduce((sum,p)=>sum+(p.items||[]).filter(i=>!i.approved&&!i.paymentId&&(!monthLimit||(i.dueDate&&String(i.dueDate).slice(0,7)<=monthLimit))).reduce((s,i)=>s+Number(i.amount||0),0),0),
+        getCashFlowPayments:()=>data.payments.map(p=>({id:p.id,month:p.month,employeeId:p.employeeId,employee:employeeById(p.employeeId)?.name||"",sourceItemId:p.sourceItemId||null,type:p.type,amount:Number(p.amount||0),dueDate:p.dueDate||null,status:p.status,paidAt:p.paidAt||null,method:p.method||""})),
+        onBack:null
+    };
+    window.addEventListener("prime:auth-ready",()=>{
+        syncAll().then(()=>window.dispatchEvent(new CustomEvent("prime:payroll-updated")));
+    });
 })();

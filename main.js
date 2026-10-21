@@ -26,7 +26,7 @@ document.addEventListener("DOMContentLoaded", () => {
         String(date.getDate()).padStart(2, "0")
     ].join("-");
 
-    const todayISO = localISO();
+    let todayISO = localISO();
     const currentMonth = () => localISO().slice(0, 7);
     const monthKey = (date) => String(date || "").slice(0, 7);
     const STORAGE_KEY = "primeVariableExpensesV1";
@@ -35,6 +35,7 @@ document.addEventListener("DOMContentLoaded", () => {
     let cashflowChart;
     let expensesChart;
     let expensesPage = null;
+    let revenuePage = null;
     let expenseFormDraft = null;
     let variableExpenseFilter = "all";
     const VEHICLE_TRIPS_STORAGE_KEY = "primeVehicleTripsV1";
@@ -56,6 +57,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const sidebar = $("#sidebar");
     const menuToggle = $("#menuToggle");
     const originalContent = content ? [...content.children] : [];
+
+    // Rota prioritária de Receitas: registrada no início para continuar
+    // funcionando mesmo se outro módulo falhar durante a inicialização.
+    document.addEventListener("click", (event) => {
+        const item = event.target.closest('.nav-item[data-page="Receitas"]');
+        if (!item) return;
+
+        event.preventDefault();
+        event.stopImmediatePropagation();
+
+        setActiveNavigation("Receitas");
+        closeSidebar();
+        showRevenuePage();
+    }, true);
 
     // --------------------------------------------------
     // FORMATAÇÃO DE DATAS
@@ -151,13 +166,13 @@ document.addEventListener("DOMContentLoaded", () => {
             const count = cost.paymentMethod === "card" ? Math.max(1, Number(cost.installmentsCount) || 1) : 1;
             const base = cost.paymentMethod === "card" ? (cost.invoiceDueDate || cost.date) : cost.date;
             if (!base) return [];
-            if (count === 1) return monthKey(base) === month ? [{ ...cost, vehicleId: vehicle.id, vehiclePlate: vehicle.plate, occurrenceDate: base, occurrenceAmount: amount }] : [];
+            if (count === 1) return (month == null || monthKey(base) === month) ? [{ ...cost, vehicleId: vehicle.id, vehiclePlate: vehicle.plate, occurrenceDate: base, occurrenceAmount: amount }] : [];
             return Array.from({length:count}, (_,i) => {
                 const date = new Date(base + "T12:00:00");
                 date.setMonth(date.getMonth() + i);
                 const due = localISO(date);
                 return {...cost, vehicleId:vehicle.id, vehiclePlate:vehicle.plate, occurrenceDate:due, occurrenceAmount:amount/count, installmentNumber:i+1};
-            }).filter((item) => monthKey(item.occurrenceDate) === month);
+            }).filter((item) => month == null || monthKey(item.occurrenceDate) === month);
         }));
     }
 
@@ -216,16 +231,119 @@ document.addEventListener("DOMContentLoaded", () => {
         }, { revenue: 0, expense: 0 });
     }
 
+    function getMonthlyPaidExpenseTotal(month = currentMonth()) {
+        const ordinaryExpenses = getMonthTransactions(month)
+            .filter((item) => item.type === "expense")
+            .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+        const paidInstallments = getInstallments()
+            .filter((item) => item.paid && monthKey(item.paidAt || item.date) === month)
+            .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+        const paidVehicleCosts = getVehicleCostOccurrences(month)
+            .filter((item) => item.paymentMethod !== "card")
+            .reduce((sum, item) => sum + (Number(item.occurrenceAmount) || 0), 0);
+        const payrollPaid = window.PRIMEPayroll && typeof window.PRIMEPayroll.getPaidPaymentsInMonth === "function"
+            ? window.PRIMEPayroll.getPaidPaymentsInMonth(month)
+            : 0;
+        return ordinaryExpenses + paidInstallments + getFinalizedTripTotals(month).expense + paidVehicleCosts + payrollPaid;
+    }
+
+    function getMonthlyUnpaidExpenseTotal(month = currentMonth()) {
+        // A pagar inclui pendências de meses anteriores: só saem quando forem quitadas.
+        const unpaidInstallments = getInstallments()
+            .filter((item) => !item.paid && monthKey(item.date) <= currentMonth())
+            .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+        const unpaidVehicleCosts = getVehicleCostOccurrences(null)
+            .filter((item) => item.paymentMethod === "card" && monthKey(item.occurrenceDate) <= currentMonth())
+            .reduce((sum, item) => sum + (Number(item.occurrenceAmount) || 0), 0);
+        const payrollOutstanding = window.PRIMEPayroll && typeof window.PRIMEPayroll.getOutstandingCompetencyCost === "function"
+            ? window.PRIMEPayroll.getOutstandingCompetencyCost(null)
+            : 0;
+        return unpaidInstallments + unpaidVehicleCosts + payrollOutstanding;
+    }
+
     function getMonthlyExpenseTotal(month = currentMonth()) {
-        const ordinaryExpenses = getMonthTransactions(month).filter((item) => item.type === "expense").reduce((sum, item) => sum + item.amount, 0);
-        const registeredExpenses = getInstallments().filter((item) => monthKey(item.date) === month).reduce((sum, item) => sum + item.amount, 0);
-        const payrollCost = window.PRIMEPayroll ? window.PRIMEPayroll.getCompetencyCost(month) : 0;
-        return ordinaryExpenses + registeredExpenses + getFinalizedTripTotals(month).expense + getMonthlyVehicleMaintenanceTotal(month) + payrollCost;
+        const ordinaryExpenses = getMonthTransactions(month)
+            .filter((item) => item.type === "expense")
+            .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+        const registeredExpenses = getInstallments()
+            .filter((item) => monthKey(item.date) === month)
+            .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+        const payrollPaid = window.PRIMEPayroll && typeof window.PRIMEPayroll.getPaidPaymentsInMonth === "function"
+            ? window.PRIMEPayroll.getPaidPaymentsInMonth(month)
+            : 0;
+        return ordinaryExpenses + registeredExpenses + getFinalizedTripTotals(month).expense
+            + getMonthlyVehicleMaintenanceTotal(month) + payrollPaid;
+    }
+
+    function getAllRevenueRecords() {
+        try {
+            const rows = JSON.parse(localStorage.getItem("primeRevenueDemoV1") || "[]");
+            return Array.isArray(rows) ? rows : [];
+        } catch (error) {
+            console.error("Não foi possível ler as receitas:", error);
+            return [];
+        }
+    }
+
+    function getPaidRevenueRecords() {
+        return getAllRevenueRecords().filter((row) => row.payment_status === "recebido");
+    }
+
+    function getReceivableRevenueRecords() {
+        return getAllRevenueRecords().filter((row) => row.payment_status !== "recebido");
+    }
+
+    function getReceivableBalance() {
+        return getReceivableRevenueRecords().reduce((sum, row) => {
+            const total = Math.max(0, Number(row.total_amount) || 0);
+            const received = Math.max(0, Number(row.received_amount) || 0);
+            return sum + Math.max(0, total - received);
+        }, 0);
+    }
+
+    function getForecastReceiptsToday() {
+        return getReceivableRevenueRecords()
+            .filter((row) => String(row.due_date || row.competency_date || row.service_date || "") === todayISO)
+            .reduce((sum, row) => {
+                const total = Math.max(0, Number(row.total_amount) || 0);
+                const received = Math.max(0, Number(row.received_amount) || 0);
+                return sum + Math.max(0, total - received);
+            }, 0);
+    }
+
+    function getForecastUnpaidExpensesToday() {
+        const unpaidInstallments = getInstallments()
+            .filter((item) => !item.paid && String(item.date || "") === todayISO)
+            .reduce((sum, item) => sum + Math.max(0, Number(item.amount) || 0), 0);
+        const todayVehicleCosts = getVehicleCostOccurrences(currentMonth())
+            .filter((item) => String(item.occurrenceDate || "") === todayISO);
+        const unpaidVehicleInvoices = todayVehicleCosts
+            .filter((item) => item.paymentMethod === "card")
+            .reduce((sum, item) => sum + Math.max(0, Number(item.occurrenceAmount) || 0), 0);
+        // A folha é projetada pelo custo mensal em aberto, não apenas pelo vencimento de hoje.
+        return unpaidInstallments + unpaidVehicleInvoices;
+    }
+
+    function getPaidVehicleCostsToday() {
+        return getVehicleCostOccurrences(currentMonth())
+            .filter((item) => String(item.occurrenceDate || "") === todayISO && item.paymentMethod !== "card")
+            .reduce((sum, item) => sum + Math.max(0, Number(item.occurrenceAmount) || 0), 0);
+    }
+
+    function getProjectedDailyBalance() {
+        // O saldo efetivo já inclui os recebimentos e pagamentos realmente registrados.
+        // Somente compromissos ainda pendentes de hoje são adicionados à projeção.
+        const pendingMonthlyPayroll = window.PRIMEPayroll && typeof window.PRIMEPayroll.getOutstandingCompetencyCost === "function"
+            ? window.PRIMEPayroll.getOutstandingCompetencyCost(currentMonth())
+            : 0;
+        return getCashBalance() + getForecastReceiptsToday()
+            - getForecastUnpaidExpensesToday() - getPaidVehicleCostsToday() - pendingMonthlyPayroll;
     }
 
     function getMonthlyRevenueTotal(month = currentMonth()) {
         const ordinaryRevenue = getMonthTransactions(month).filter((item) => item.type === "revenue").reduce((sum, item) => sum + item.amount, 0);
-        return ordinaryRevenue + getFinalizedTripTotals(month).revenue;
+        const receivedRevenue = getPaidRevenueRecords().filter((item) => monthKey(item.payment_date) === month).reduce((sum, item) => sum + (Number(item.received_amount ?? item.total_amount) || 0), 0);
+        return ordinaryRevenue + receivedRevenue + getFinalizedTripTotals(month).revenue;
     }
 
     function getTotals(items) {
@@ -241,20 +359,31 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function getCashBalance() {
-        const ordinaryTotals = getTotals(transactions);
+        // O saldo efetivo não deve incorporar lançamentos datados no futuro.
+        const ordinaryTotals = getTotals(transactions.filter((item) => !item.date || item.date <= todayISO));
 
         const paidInstallments = getInstallments()
-            .filter((item) => item.paid)
+            .filter((item) => item.paid && String(item.paidAt || item.date || "").slice(0, 10) <= todayISO)
             .reduce((sum, item) => sum + item.amount, 0);
 
-        const finalizedTrips = vehicleTrips.filter((trip) => trip.finalizedAt).reduce((totals, trip) => {
+        const finalizedTrips = vehicleTrips.filter((trip) => {
+            if (!trip.finalizedAt) return false;
+            const finalizedDate = String(trip.finalizedAt).slice(0, 10);
+            const tripDate = String(trip.tripDate || "");
+            return finalizedDate <= todayISO && (!tripDate || tripDate <= todayISO);
+        }).reduce((totals, trip) => {
             totals.revenue += Math.max(0, Number(trip.manifestData?.totalFreight) || 0);
             totals.expense += Math.max(0, Number(trip.vehiclePay) || 0);
             totals.expense += (Array.isArray(trip.extraCosts) ? trip.extraCosts : []).reduce((sum, cost) => sum + Math.max(0, Number(cost.amount) || 0), 0);
             return totals;
         }, { revenue: 0, expense: 0 });
-        const paidPayroll = window.PRIMEPayroll ? window.PRIMEPayroll.getPaidPaymentsTotal() : 0;
-        return ordinaryTotals.revenue - ordinaryTotals.expense - paidInstallments - paidPayroll + finalizedTrips.revenue - finalizedTrips.expense;
+        const paidPayroll = window.PRIMEPayroll && typeof window.PRIMEPayroll.getPaidPaymentsThroughDate === "function"
+            ? window.PRIMEPayroll.getPaidPaymentsThroughDate(todayISO)
+            : (window.PRIMEPayroll ? window.PRIMEPayroll.getPaidPaymentsTotal() : 0);
+        const receivedRevenue = getPaidRevenueRecords()
+            .filter((item) => !item.payment_date || String(item.payment_date).slice(0, 10) <= todayISO)
+            .reduce((sum, item) => sum + (Number(item.received_amount ?? item.total_amount) || 0), 0);
+        return ordinaryTotals.revenue + receivedRevenue - ordinaryTotals.expense - paidInstallments - paidPayroll + finalizedTrips.revenue - finalizedTrips.expense;
     }
 
     function getExpenseCategories() {
@@ -269,7 +398,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 .filter((item) => monthKey(item.date) === currentMonth())
                 .map((item) => ({ amount: item.amount, category: item.category || "Outros" })),
             ...getVehicleCostOccurrences(currentMonth()).map((item) => ({ amount: item.occurrenceAmount, category: "Manutenção" })),
-            ...(window.PRIMEPayroll && window.PRIMEPayroll.getCompetencyCost(currentMonth()) > 0 ? [{ amount: window.PRIMEPayroll.getCompetencyCost(currentMonth()), category: "Pessoal" }] : [])
+            ...(window.PRIMEPayroll && typeof window.PRIMEPayroll.getPaidPaymentsInMonth === "function" && window.PRIMEPayroll.getPaidPaymentsInMonth(currentMonth()) > 0 ? [{ amount: window.PRIMEPayroll.getPaidPaymentsInMonth(currentMonth()), category: "Pessoal" }] : [])
         ];
 
         currentExpenses.forEach((expense) => {
@@ -296,18 +425,30 @@ document.addEventListener("DOMContentLoaded", () => {
     function updateDashboard() {
         const revenue = getMonthlyRevenueTotal();
         const expense = getMonthlyExpenseTotal();
-        const result = revenue - expense;
+        const paidExpense = getMonthlyPaidExpenseTotal();
+        const unpaidExpense = getMonthlyUnpaidExpenseTotal();
+        const result = getProjectedDailyBalance();
+        const receivableRecords = getReceivableRevenueRecords();
+        const receivableBalance = getReceivableBalance();
 
         if ($("#balanceValue")) {
             $("#balanceValue").textContent = money(getCashBalance());
         }
 
-        if ($("#revenueValue")) {
-            $("#revenueValue").textContent = money(revenue);
+        if ($("#receivedValue")) {
+            $("#receivedValue").textContent = money(revenue);
         }
 
-        if ($("#expenseValue")) {
-            $("#expenseValue").textContent = money(expense);
+        if ($("#receivableValue")) {
+            $("#receivableValue").textContent = money(receivableBalance);
+        }
+
+        if ($("#paidExpenseValue")) {
+            $("#paidExpenseValue").textContent = money(paidExpense);
+        }
+
+        if ($("#unpaidExpenseValue")) {
+            $("#unpaidExpenseValue").textContent = money(unpaidExpense);
         }
 
         if ($("#resultValue")) {
@@ -315,27 +456,25 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         const monthlyTransactions = getMonthTransactions();
-
-        const revenueCount = monthlyTransactions.filter(
-            (item) => item.type === "revenue"
-        ).length;
-
         const expenseCount =
             monthlyTransactions.filter((item) => item.type === "expense").length +
             getInstallments().filter((item) => monthKey(item.date) === currentMonth()).length +
+            vehicleTrips.filter((trip) => trip.finalizedAt && monthKey(trip.tripDate) === currentMonth()).length +
             getVehicleCostOccurrences(currentMonth()).length +
-            (window.PRIMEPayroll && window.PRIMEPayroll.getCompetencyCost(currentMonth()) > 0 ? 1 : 0);
+            (window.PRIMEPayroll && typeof window.PRIMEPayroll.getPaidPaymentsInMonth === "function" && window.PRIMEPayroll.getPaidPaymentsInMonth(currentMonth()) > 0 ? 1 : 0);
 
         const balanceStatus = $(".kpi-card:nth-child(1) .kpi-bottom");
-        const revenueStatus = $(".kpi-card:nth-child(2) .kpi-bottom");
-        const expenseStatus = $(".kpi-card:nth-child(3) .kpi-bottom");
-        const resultStatus = $(".kpi-card:nth-child(4) .kpi-bottom");
+        const receivedStatus = $("#receivedStatus");
+        const receivableStatus = $("#receivableStatus");
+        const paidExpenseStatus = $("#paidExpenseStatus");
+        const unpaidExpenseStatus = $("#unpaidExpenseStatus");
+        const resultStatus = $("#resultValue")?.closest(".kpi-card")?.querySelector(".kpi-bottom");
 
         if (balanceStatus) {
             balanceStatus.innerHTML = `
                 <span class="status-neutral">
                     <i data-lucide="minus"></i>
-                    ${transactions.length || getInstallments().some((item) => item.paid)
+                    ${transactions.length || getInstallments().some((item) => item.paid) || getPaidRevenueRecords().length
                     ? "Movimentações registradas"
                     : "Sem movimentações"}
                 </span>
@@ -343,23 +482,43 @@ document.addEventListener("DOMContentLoaded", () => {
             `;
         }
 
-        if (revenueStatus) {
-            revenueStatus.innerHTML = `
+        if (receivedStatus) {
+            receivedStatus.innerHTML = `
                 <span class="status-neutral">
                     <i data-lucide="minus"></i>
-                    ${revenueCount ? `${revenueCount} lançamento(s)` : "Sem registros"}
+                    ${revenue > 0 ? "Recebimentos registrados" : "Nenhum recebimento no mês"}
                 </span>
-                <span class="muted">Mês atual</span>
+                <span class="muted">Recebido no mês atual</span>
             `;
         }
 
-        if (expenseStatus) {
-            expenseStatus.innerHTML = `
+        if (receivableStatus) {
+            receivableStatus.innerHTML = `
                 <span class="status-neutral">
                     <i data-lucide="minus"></i>
-                    ${expenseCount ? `${expenseCount} compromisso(s)` : "Sem registros"}
+                    ${receivableRecords.length ? `${receivableRecords.length} fatura(s) pendente(s)` : "Nenhuma fatura pendente"}
                 </span>
-                <span class="muted">Mês atual</span>
+                <span class="muted">Em aberto e vencidas</span>
+            `;
+        }
+
+        if (paidExpenseStatus) {
+            paidExpenseStatus.innerHTML = `
+                <span class="status-neutral">
+                    <i data-lucide="minus"></i>
+                    ${paidExpense > 0 ? "Pagamentos registrados" : "Nenhum pagamento no mês"}
+                </span>
+                <span class="muted">Pago no mês atual</span>
+            `;
+        }
+
+        if (unpaidExpenseStatus) {
+            unpaidExpenseStatus.innerHTML = `
+                <span class="status-neutral">
+                    <i data-lucide="minus"></i>
+                    ${unpaidExpense > 0 ? "Há compromissos pendentes" : "Nenhuma despesa pendente"}
+                </span>
+                <span class="muted">A pagar no mês atual</span>
             `;
         }
 
@@ -367,9 +526,9 @@ document.addEventListener("DOMContentLoaded", () => {
             resultStatus.innerHTML = `
                 <span class="status-neutral">
                     <i data-lucide="minus"></i>
-                    ${revenueCount || expenseCount ? "Resultado do mês" : "Sem registros"}
+                    Projeção diária
                 </span>
-                <span class="muted">Mês atual</span>
+                <span class="muted">Previsão de fechamento de hoje</span>
             `;
         }
 
@@ -593,6 +752,8 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    window.addEventListener("prime:revenues-updated", () => { updateDashboard(); });
+
     function updateCharts() {
         const period = $("#cashflowPeriod");
         initCashflowChart(period ? Number(period.value) : 6);
@@ -611,13 +772,15 @@ document.addEventListener("DOMContentLoaded", () => {
             ? $("#globalSearch").value.trim().toLocaleLowerCase("pt-BR")
             : "";
 
-        const filtered = transactions.filter((item) => {
-            const searchable = [
-                item.description,
-                item.type === "revenue" ? "receita" : "despesa",
-                item.category || ""
-            ].join(" ").toLocaleLowerCase("pt-BR");
-
+        const revenueTransactions = getPaidRevenueRecords().map((item) => ({
+            description: item.description || ("Receita " + item.reference),
+            type: "revenue", category: item.category || "Frete",
+            amount: Number(item.received_amount ?? item.total_amount) || 0,
+            date: item.payment_date, reference: item.reference, customer_name: item.customer_name
+        }));
+        const allTransactions = [...transactions, ...revenueTransactions];
+        const filtered = allTransactions.filter((item) => {
+            const searchable = [item.description, item.customer_name || "", item.reference || "", item.type === "revenue" ? "receita" : "despesa", item.category || ""].join(" ").toLocaleLowerCase("pt-BR");
             return searchable.includes(query);
         });
 
@@ -747,6 +910,9 @@ document.addEventListener("DOMContentLoaded", () => {
         if (expensesPage) {
             expensesPage.hidden = true;
         }
+        if (revenuePage) {
+            revenuePage.hidden = true;
+        }
 
         originalContent.forEach((element) => {
             element.hidden = false;
@@ -764,6 +930,56 @@ document.addEventListener("DOMContentLoaded", () => {
             behavior: "smooth",
             block: "start"
         });
+    }
+
+    function showRevenuePage() {
+        if (!content) {
+            console.error("[PRIME Receitas] Não foi encontrado o contêiner .content.");
+            showToast("Não foi possível abrir Receitas: área principal não encontrada.");
+            return;
+        }
+
+        if (!revenuePage) {
+            revenuePage = document.createElement("section");
+            revenuePage.id = "revenuePage";
+            revenuePage.hidden = true;
+            revenuePage.setAttribute("aria-live", "polite");
+            content.appendChild(revenuePage);
+        }
+
+        originalContent.forEach((element) => { element.hidden = true; });
+        if (expensesPage) expensesPage.hidden = true;
+        revenuePage.hidden = false;
+
+        if ($("#currentPage")) $("#currentPage").textContent = "Receitas";
+        window.scrollTo({ top: 0, behavior: "smooth" });
+
+        if (!window.PRIMERevenue || typeof window.PRIMERevenue.render !== "function") {
+            console.error("[PRIME Receitas] revenue.js não disponibilizou PRIMERevenue.render.");
+            revenuePage.innerHTML = `
+                <div class="expenses-page-header">
+                    <div class="eyebrow">GESTÃO FINANCEIRA / FATURAMENTO</div>
+                    <h1>Receitas<span class="blue-period">.</span></h1>
+                    <p>O módulo de receitas foi solicitado, mas o arquivo revenue.js não foi inicializado.</p>
+                    <p style="margin-top:12px;color:#FCA5A5">Atualize a página com ⌘ + Shift + R. Se o problema continuar, verifique o carregamento de revenue.js.</p>
+                </div>`;
+            showToast("A tela Receitas abriu, mas o módulo não foi inicializado.");
+            return;
+        }
+
+        try {
+            window.PRIMERevenue.render(revenuePage);
+        } catch (error) {
+            console.error("[PRIME Receitas] Erro ao renderizar a tela:", error);
+            revenuePage.innerHTML = `
+                <div class="expenses-page-header">
+                    <div class="eyebrow">GESTÃO FINANCEIRA / FATURAMENTO</div>
+                    <h1>Receitas<span class="blue-period">.</span></h1>
+                    <p>Ocorreu um erro ao montar a tela de receitas.</p>
+                    <p style="margin-top:12px;color:#FCA5A5">${String(error && error.message ? error.message : error)}</p>
+                </div>`;
+            showToast("Receitas abriu com um erro. A mensagem está visível na tela.");
+        }
     }
 
     // --------------------------------------------------
@@ -1151,7 +1367,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const cityHtml = cities.length ? '<div class="vehicle-trip-city-list">' + cities.map((city) => '<span>' + escapeHTML(city) + '</span>').join("") + '</div>' : '<p class="vehicle-trip-no-data">Nenhuma cidade foi identificada no manifesto.</p>';
         const rowHtml = cteRows.map((row) => '<tr><td>' + escapeHTML(row.cte) + '</td><td>' + escapeHTML(row.city + (row.uf ? "/" + row.uf : "")) + '</td><td>' + (row.weightKg == null ? "—" : formatManifestNumber(row.weightKg, 1)) + '</td><td>' + (row.volumes == null ? "—" : formatManifestNumber(row.volumes, 0)) + '</td><td>' + (row.freightValue == null ? "—" : "R$ " + formatManifestNumber(row.freightValue, 2)) + '</td></tr>').join("");
         const costRows = costs.length ? costs.map((cost) => '<div class="vehicle-trip-cost-row"><div><strong>' + escapeHTML(cost.category || "Outro custo") + '</strong><span>' + escapeHTML([cost.location, cost.fuelType, cost.liters ? cost.liters + " L" : "", cost.km ? "KM " + cost.km : "", cost.description].filter(Boolean).join(" • ")) + '</span></div><strong>' + money(Number(cost.amount) || 0) + '</strong>' + (isFinalized ? '' : '<button type="button" class="button-secondary" data-cost-delete="' + escapeHTML(cost.id) + '" aria-label="Excluir custo extra"><i data-lucide="trash-2"></i></button>') + '</div>').join("") : '<p class="vehicle-trip-no-data">Nenhum custo extra cadastrado nesta viagem.</p>';
-        return '<div class="expenses-page-header"><div class="eyebrow">GESTÃO FINANCEIRA / VEÍCULOS / VIAGENS</div><h1>Detalhes da viagem<span class="blue-period">.</span></h1><p>Dados cadastrais, custos e informações extraídas do manifesto.</p><div class="vehicle-trips-toolbar"><button type="button" class="button-secondary" data-trip-action="back-list"><i data-lucide="arrow-left"></i> Voltar para viagens</button>' + (isFinalized ? '<span class="vehicle-trip-status-finalized">Viagem finalizada</span><button type="button" class="button-primary" data-trip-action="reopen-trip"><i data-lucide="rotate-ccw"></i> Reabrir viagem</button>' : '<button type="button" class="button-primary" data-trip-action="finalize-trip"><i data-lucide="check-circle"></i> Finalizar viagem</button>') + '<button type="button" class="button-secondary" data-trip-action="trip-report"><i data-lucide="file-down"></i> Relatório PDF</button><button type="button" class="button-danger" data-trip-action="delete-trip"><i data-lucide="trash-2"></i> Excluir viagem</button></div></div>' +
+        return '<div class="expenses-page-header"><div class="eyebrow">GESTÃO FINANCEIRA / VEÍCULOS / VIAGENS</div><h1>Detalhes da viagem<span class="blue-period">.</span></h1><p>Dados cadastrais, custos e informações extraídas do manifesto.</p><div class="vehicle-trips-toolbar"><button type="button" class="button-secondary" data-trip-action="back-list"><i data-lucide="arrow-left"></i> Voltar para viagens</button>' + (isFinalized ? '<span class="vehicle-trip-status-finalized">Viagem finalizada</span><button type="button" class="button-primary" data-trip-action="reopen-trip"><i data-lucide="rotate-ccw"></i> Reabrir viagem</button>' : '<button type="button" class="button-primary" data-trip-action="finalize-trip"><i data-lucide="check-circle"></i> Finalizar viagem</button>') + '<button type="button" class="button-secondary" data-trip-action="trip-report"><i data-lucide="file-down"></i> Relatório PDF</button>' + ((!trip.manifestName || !trip.manifestData) ? '<button type="button" class="button-primary" data-trip-action="add-manifest"><i data-lucide="file-plus-2"></i> ' + (trip.manifestName ? 'Atualizar manifesto' : 'Adicionar manifesto') + '</button><input type="file" data-trip-manifest-later accept=".pdf,.xlsx,.xls,.csv,.xml,.jpg,.jpeg,.png" hidden>' : '') + '<button type="button" class="button-danger" data-trip-action="delete-trip"><i data-lucide="trash-2"></i> Excluir viagem</button></div></div>' +
         '<section class="vehicle-trip-details-panel"><div class="vehicle-trip-details-heading"><div><span class="vehicle-trip-detail-kicker">DADOS DA VIAGEM</span><h2>' + escapeHTML(trip.driver || "Motorista não informado") + '</h2><p>Placa: ' + escapeHTML(trip.plate || "—") + ' <span>•</span> Data: ' + escapeHTML(dateLabel(trip.tripDate)) + '</p></div><span class="vehicle-trip-details-file"><i data-lucide="file-check-2"></i> ' + escapeHTML(trip.manifestName || "Manifesto não anexado") + '</span></div><div class="vehicle-trip-metrics">' + metricHtml + '</div><div class="vehicle-trip-detail-section"><h3><i data-lucide="map-pin"></i> Cidades destinatárias</h3>' + cityHtml + '</div><div class="vehicle-trip-detail-section vehicle-trip-operational-code"><h3><i data-lucide="file-text"></i> Manifesto operacional</h3><strong>' + dash(data.operationalManifest) + '</strong></div>' +
         '<section class="vehicle-trip-detail-section"><div class="vehicle-trip-table-heading"><div><h3><i data-lucide="files"></i> CT-es identificados</h3><p>Expanda somente quando precisar conferir os documentos.</p></div><span>' + cteRows.length + ' CT-e(s)</span></div><details class="vehicle-trip-cte-disclosure"><summary>Ver CT-es identificados</summary>' + (cteRows.length ? '<div class="vehicle-trip-table-wrap"><table class="vehicle-trip-cte-table"><thead><tr><th>CT-e</th><th>Cidade</th><th>Peso (kg)</th><th>QVOL</th><th>Val. frete</th></tr></thead><tbody>' + rowHtml + '</tbody></table></div>' : '<p class="vehicle-trip-no-data">Não foi possível separar os CT-es individuais deste arquivo. Os dados gerais identificados continuam disponíveis acima.</p>') + '</details></section>' +
         '<section class="vehicle-trip-detail-section"><h3><i data-lucide="gauge"></i> Quilometragem e pagamento do veículo</h3>' + (isFinalized ? '<p class="vehicle-trip-locked-note">Esta viagem foi finalizada. Os dados estão bloqueados para edição.</p>' : '') + '<form id="tripCostsForm" class="vehicle-trip-cost-form"' + (isFinalized ? ' hidden' : '') + '><label class="form-field">Valor pago ao veículo (R$)<input type="number" name="vehiclePay" min="0" step="0.01" value="' + (trip.vehiclePay ?? "") + '" placeholder="0,00"></label><label class="form-field">KM de saída<input type="number" name="startKm" min="0" step="1" value="' + (trip.startKm ?? "") + '" placeholder="Ex.: 125000"></label><label class="form-field">KM de retorno<input type="number" name="returnKm" min="0" step="1" value="' + (trip.returnKm ?? "") + '" placeholder="Ex.: 125650"></label><div class="vehicle-trip-cost-form-actions"><button class="button-primary" type="submit"><i data-lucide="save"></i> Salvar dados</button></div></form><div class="vehicle-trip-cost-summary"><div><span>Distância percorrida</span><strong>' + (tripKm > 0 ? formatManifestNumber(tripKm, 0) + ' km' : '—') + '</strong></div><div><span>Custos extras</span><strong>' + money(totalExtras) + '</strong></div><div><span>Custo total registrado</span><strong>' + money(totalCost) + '</strong></div><div><span>Resultado estimado do frete</span><strong>' + money(result) + '</strong></div></div></section>' +
@@ -1212,6 +1428,43 @@ document.addEventListener("DOMContentLoaded", () => {
                     renderVehicleTripsPage(false, selectedTrip.id);
                 });
                 $("[data-trip-action='trip-report']", expensesPage)?.addEventListener("click", () => generateVehicleTripReport(selectedTrip));
+                const addManifestButton = $("[data-trip-action='add-manifest']", expensesPage);
+                const laterManifestInput = $("[data-trip-manifest-later]", expensesPage);
+                addManifestButton?.addEventListener("click", () => laterManifestInput?.click());
+                laterManifestInput?.addEventListener("change", async () => {
+                    const file = laterManifestInput.files?.[0];
+                    if (!file) return;
+                    addManifestButton.disabled = true;
+                    addManifestButton.innerHTML = '<i data-lucide="loader-circle"></i> Lendo manifesto...';
+                    refreshIcons();
+                    try {
+                        const extractedText = await readManifestFile(file);
+                        const parsedData = parseManifestData(extractedText);
+                        const foundAnyData = parsedData.totalCtes || parsedData.totalWeight !== null || parsedData.totalVolumes !== null || parsedData.totalFreight !== null || parsedData.operationalManifest || parsedData.cteRows.length;
+                        if (!foundAnyData) throw new Error("Não encontrei os campos esperados neste manifesto. Confira se o arquivo contém os dados operacionais no padrão esperado.");
+                        const previousName = selectedTrip.manifestName;
+                        const previousData = selectedTrip.manifestData;
+                        selectedTrip.manifestName = file.name;
+                        selectedTrip.manifestData = parsedData;
+                        if (!persistVehicleTrips()) {
+                            selectedTrip.manifestName = previousName;
+                            selectedTrip.manifestData = previousData;
+                            return;
+                        }
+                        if (selectedTrip.finalizedAt) updateDashboard();
+                        showToast("Manifesto adicionado à viagem com sucesso.");
+                        renderVehicleTripsPage(false, selectedTrip.id);
+                    } catch (error) {
+                        console.error("Erro ao adicionar manifesto à viagem:", error);
+                        showToast(error.message || "Não foi possível ler o manifesto selecionado.");
+                    } finally {
+                        if (addManifestButton.isConnected) {
+                            addManifestButton.disabled = false;
+                            addManifestButton.innerHTML = '<i data-lucide="file-plus-2"></i> Adicionar manifesto';
+                            refreshIcons();
+                        }
+                    }
+                });
                 const tripCostsForm = $("#tripCostsForm", expensesPage);
                 tripCostsForm?.addEventListener("submit", (event) => {
                     event.preventDefault();
@@ -1663,6 +1916,12 @@ document.addEventListener("DOMContentLoaded", () => {
         const page = createExpensesPage();
 
         renderExpensesHome();
+
+        // Garante que apenas uma tela de módulo fique visível por vez.
+        // A tela Receitas é criada por um arquivo de navegação independente.
+        Array.from(content.children).forEach((child) => {
+            child.hidden = child !== page;
+        });
         page.hidden = false;
 
         if ($("#currentPage")) {
@@ -2099,6 +2358,7 @@ document.addEventListener("DOMContentLoaded", () => {
             company: "",
             taxId: "",
             expenseType: "variable",
+            repeatMonths: 12,
             totalAmount: "",
             installmentCount: 1,
             firstDate: todayISO,
@@ -2189,6 +2449,13 @@ document.addEventListener("DOMContentLoaded", () => {
                                     <option value="variable">Variável</option>
                                     <option value="fixed">Fixa</option>
                                 </select>
+                            </label>
+
+                            <label class="form-field" id="repeatMonthsField" hidden>
+                                Repetir por quantos meses? *
+                                <input name="repeatMonths" type="number" min="1"
+                                    max="120" step="1" value="12">
+                                <small class="field-hint">O PRIME criará uma ocorrência por mês, com o mesmo valor e vencimento no mesmo dia (ou no último dia do mês, quando necessário).</small>
                             </label>
 
                             <label class="form-field">
@@ -2482,150 +2749,102 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function extractDocumentAmount(text) {
-        const lines = String(text || "")
-            .split(/\r?\n/)
-            .map((line) => line.trim())
-            .filter(Boolean);
-
+        const source = String(text || "").replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ");
+        const amountPattern = "(\\d{1,3}(?:\\.\\d{3})*,\\d{2}|\\d+,\\d{2}|\\d{1,3}(?:,\\d{3})*\\.\\d{2}|\\d+\\.\\d{2})";
         const labels = [
-            /total\s+a\s+pagar/i,
-            /valor\s+total/i,
-            /valor\s+a\s+pagar/i,
-            /valor\s+do\s+documento/i,
-            /valor\s+da\s+fatura/i,
-            /total\s+da\s+fatura/i,
-            /valor\s+cobrado/i,
-            /valor\s+final/i,
-            /total\s+geral/i,
-            /valor\s+do\s+boleto/i
+            /valor\s+do\s+documento/i, /valor\s+cobrado/i, /total\s+a\s+pagar/i,
+            /valor\s+a\s+pagar/i, /valor\s+da\s+fatura/i, /total\s+da\s+fatura/i,
+            /valor\s+do\s+boleto/i, /valor\s+total/i, /valor\s+final/i, /total\s+geral/i
         ];
-
-        const moneyRegex =
-            /(?:R\$\s*)?(\d{1,3}(?:\.\d{3})+,\d{2}|\d+,\d{2}|\d{1,3}(?:,\d{3})+\.\d{2}|\d+\.\d{2})/g;
 
         function parseAmount(value) {
             let normalized = String(value).trim().replace(/\s/g, "");
-
-            if (normalized.includes(",")) {
-                normalized = normalized.replace(/\./g, "").replace(",", ".");
-            }
-
+            if (normalized.includes(",")) normalized = normalized.replace(/\./g, "").replace(",", ".");
             const amount = Number(normalized);
-
-            return Number.isFinite(amount) && amount > 0
-                ? amount
-                : null;
+            return Number.isFinite(amount) && amount > 0 ? amount : null;
         }
 
-        // Procura primeiro valores próximos de rótulos financeiros relevantes.
-        for (let index = 0; index < lines.length; index++) {
-            if (!labels.some((label) => label.test(lines[index]))) continue;
-
-            const nearby = [
-                lines[index],
-                lines[index + 1] || "",
-                lines[index - 1] || ""
-            ].join(" ");
-
-            const matches = [...nearby.matchAll(moneyRegex)];
-
-            for (const match of matches) {
-                const amount = parseAmount(match[1]);
-                if (amount !== null) return amount;
+        for (const label of labels) {
+            const flags = label.flags.includes("g") ? label.flags : label.flags + "g";
+            for (const match of source.matchAll(new RegExp(label.source, flags))) {
+                const afterLabel = source.slice(match.index + match[0].length, match.index + match[0].length + 100);
+                const nextField = afterLabel.search(/(?:desconto\s*\/\s*abatimento|outras\s+deducoes|mora\s*\/\s*multa|outros\s+acrescimos|nosso\s+numero|pagador|beneficiario|cedente)/i);
+                const candidate = nextField >= 0 ? afterLabel.slice(0, nextField) : afterLabel;
+                const valueMatch = candidate.match(new RegExp("^\\s*(?:\\(=\\)\\s*)?(?:R\\$\\s*)?" + amountPattern));
+                const nearbyMatch = valueMatch || candidate.match(new RegExp("(?:R\\$\\s*)?" + amountPattern));
+                if (nearbyMatch) {
+                    const amount = parseAmount(nearbyMatch[1]);
+                    if (amount !== null) return amount;
+                }
             }
         }
-
         return null;
     }
 
     function extractDocumentDueDate(text) {
-        const lines = String(text || "")
-            .split(/\r?\n/)
-            .map((line) => line.trim())
-            .filter(Boolean);
+        const source = String(text || "").replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ");
+        const datePattern = "\\b(\\d{2})[\\/.-](\\d{2})[\\/.-](\\d{4})\\b|\\b(\\d{4})-(\\d{2})-(\\d{2})\\b";
+        const labels = [/data\s+de\s+vencimento/i, /vencimento/i, /pagar\s+ate/i, /pague\s+ate/i, /venc\./i];
 
-        const dateRegex =
-            /\b(\d{2})[\/.-](\d{2})[\/.-](\d{4})\b|\b(\d{4})-(\d{2})-(\d{2})\b/g;
+        function toISO(match) {
+            const day = Number(match[1] || match[6]);
+            const month = Number(match[2] || match[5]);
+            const year = Number(match[3] || match[4]);
+            const date = new Date(year, month - 1, day);
+            if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return "";
+            return [year, String(month).padStart(2, "0"), String(day).padStart(2, "0")].join("-");
+        }
 
-        const dueDateLabels =
-            /vencimento|data\s+de\s+vencimento|pagar\s+ate|pague\s+ate|venc\./i;
-
-        for (let index = 0; index < lines.length; index++) {
-            if (!dueDateLabels.test(lines[index])) continue;
-
-            const nearby = [
-                lines[index],
-                lines[index + 1] || "",
-                lines[index - 1] || ""
-            ].join(" ");
-
-            const matches = [...nearby.matchAll(dateRegex)];
-
-            for (const match of matches) {
-                let year;
-                let month;
-                let day;
-
-                if (match[1]) {
-                    day = Number(match[1]);
-                    month = Number(match[2]);
-                    year = Number(match[3]);
-                } else {
-                    year = Number(match[4]);
-                    month = Number(match[5]);
-                    day = Number(match[6]);
-                }
-
-                const date = new Date(year, month - 1, day);
-
-                if (
-                    date.getFullYear() === year &&
-                    date.getMonth() === month - 1 &&
-                    date.getDate() === day
-                ) {
-                    return [
-                        year,
-                        String(month).padStart(2, "0"),
-                        String(day).padStart(2, "0")
-                    ].join("-");
+        for (const label of labels) {
+            const flags = label.flags.includes("g") ? label.flags : label.flags + "g";
+            for (const match of source.matchAll(new RegExp(label.source, flags))) {
+                const afterLabel = source.slice(match.index + match[0].length, match.index + match[0].length + 90);
+                const nextField = afterLabel.search(/(?:beneficiario|agencia|valor\s+do\s+documento|nosso\s+numero|data\s+do\s+documento|pagador)/i);
+                const candidate = nextField >= 0 ? afterLabel.slice(0, nextField) : afterLabel;
+                const dateMatch = candidate.match(new RegExp(datePattern));
+                if (dateMatch) {
+                    const iso = toISO(dateMatch);
+                    if (iso) return iso;
                 }
             }
         }
 
+        const lines = source.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        for (let index = 0; index < lines.length; index++) {
+            if (!labels.some((label) => label.test(lines[index]))) continue;
+            const nearby = [lines[index], lines[index + 1] || "", lines[index - 1] || ""].join(" ");
+            const dateMatch = nearby.match(new RegExp(datePattern));
+            if (dateMatch) {
+                const iso = toISO(dateMatch);
+                if (iso) return iso;
+            }
+        }
         return "";
     }
 
     function extractDocumentCNPJ(text) {
-        const lines = String(text || "").split(/\r?\n/);
-
-        for (let index = 0; index < lines.length; index++) {
-            if (!/CNPJ/i.test(lines[index])) continue;
-
-            const nearby = [
-                lines[index],
-                lines[index + 1] || ""
-            ].join(" ");
-
-            const match = nearby.match(
-                /\b\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}\b/
-            );
-
-            if (match) {
-                const digits = match[0].replace(/\D/g, "");
-
-                if (digits.length === 14) {
-                    return digits;
-                }
+        const source = String(text || "").replace(/\u00a0/g, " ");
+        // Não aceitar números de CPF/identificação do pagador como CNPJ.
+        // O CNPJ deve estar associado ao rótulo "CNPJ" ou vir formatado como CNPJ.
+        const matches = [...source.matchAll(/(?:CNPJ\s*:?\s*(\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2})|(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}))/gi)];
+        for (const match of matches) {
+            const digits = (match[1] || match[2]).replace(/\D/g, "");
+            if (digits.length === 14 && digits !== "00000000000000") {
+                const context = source.slice(Math.max(0, match.index - 180), match.index + 40);
+                if (/benefici[aá]rio|cedente|santander/i.test(context)) return digits;
             }
         }
-
+        for (const match of matches) {
+            const digits = match[1].replace(/\D/g, "");
+            if (digits.length === 14 && digits !== "00000000000000") return digits;
+        }
         return "";
     }
 
     function identifyDocumentProvider(text, fileName) {
-        const source = normalizeDocumentText(`${text}\n${fileName || ""}`);
-
+        const source = normalizeDocumentText(String(text || "") + "\n" + (fileName || ""));
         const providers = [
+            { pattern: /santander[\s\w.,-]{0,90}(?:financ|cred|invest)|santander\s+financiamentos|soc\.\s*cred\.\s*financ/i, name: "SANTANDER SOC. CRED. FINANC. E INVEST SA" },
             { pattern: /\bcopel\b/, name: "COPEL" },
             { pattern: /\bsanepar\b/, name: "SANEPAR" },
             { pattern: /\bcelesc\b/, name: "CELESC" },
@@ -2641,52 +2860,26 @@ document.addEventListener("DOMContentLoaded", () => {
             { pattern: /\btelefonica\b/, name: "TELEFÔNICA" },
             { pattern: /\boi\s+(fibra|telecom)\b/, name: "OI" }
         ];
-
         return providers.find((provider) => provider.pattern.test(source))?.name || "";
     }
 
     function identifyDocumentDescription(text, fileName) {
         const source = normalizeDocumentText(text);
+        if (/santander\s+financiamentos|soc\.?\s*cred\.?\s*financ|parcela\s*\/\s*plano/.test(source)) return "Parcela de financiamento Santander";
+        if (/energia eletrica|consumo de energia|unidade consumidora/.test(source)) return "Conta de energia elétrica";
+        if (/saneamento|abastecimento de agua|conta de agua|esgoto/.test(source)) return "Conta de água e saneamento";
+        if (/internet|banda larga|fibra optica/.test(source)) return "Internet";
+        if (/telefonia movel|plano movel|servicos de telefonia/.test(source)) return "Telefonia";
+        if (/boleto bancario|ficha de compensacao/.test(source)) return "Pagamento de boleto";
 
-        if (/energia eletrica|consumo de energia|unidade consumidora/.test(source)) {
-            return "Conta de energia elétrica";
-        }
-
-        if (/saneamento|abastecimento de agua|conta de agua|esgoto/.test(source)) {
-            return "Conta de água e saneamento";
-        }
-
-        if (/internet|banda larga|fibra optica/.test(source)) {
-            return "Internet";
-        }
-
-        if (/telefonia movel|plano movel|servicos de telefonia/.test(source)) {
-            return "Telefonia";
-        }
-
-        if (/boleto bancario|ficha de compensacao/.test(source)) {
-            return "Pagamento de boleto";
-        }
-
-        const cleanedName = String(fileName || "")
-            .replace(/\.[^.]+$/, "")
-            .replace(/[_-]+/g, " ")
-            .replace(/\s+/g, " ")
-            .trim();
-
-        if (cleanedName && cleanedName.length <= 100) {
-            return `Despesa - ${cleanedName}`;
-        }
-
-        return "";
+        const cleanedName = String(fileName || "").replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+        return cleanedName && cleanedName.length <= 100 ? "Despesa - " + cleanedName : "";
     }
 
     function extractExpenseDocumentData(text, fileName) {
-        const provider = identifyDocumentProvider(text, fileName);
-
         return {
             name: identifyDocumentDescription(text, fileName),
-            company: provider,
+            company: identifyDocumentProvider(text, fileName),
             taxId: extractDocumentCNPJ(text),
             totalAmount: extractDocumentAmount(text),
             firstDate: extractDocumentDueDate(text)
@@ -2721,7 +2914,10 @@ document.addEventListener("DOMContentLoaded", () => {
             filled.push("valor");
         }
 
-        if (data.firstDate && !form.elements.firstDate.value) {
+        // O campo de vencimento começa preenchido com hoje por padrão.
+        // Ao importar um documento, substituímos esse valor padrão pela data do boleto,
+        // mas preservamos uma data diferente que o usuário já tenha informado.
+        if (data.firstDate && (!form.elements.firstDate.value || form.elements.firstDate.value === todayISO)) {
             form.elements.firstDate.value = data.firstDate;
             filled.push("vencimento");
         }
@@ -2848,13 +3044,21 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!form) return;
 
         const isInstallmentSelect = form.elements.isInstallment;
+        const expenseTypeSelect = form.elements.expenseType;
+        const repeatMonthsField = $("#repeatMonthsField", form);
         const countField = $("#installmentCountField", form);
         const scheduleBox = $("#expenseScheduleBox", form);
         const fixedDayField = $("#fixedDayField", form);
         const differentDatesFields = $("#differentDatesFields", form);
 
         function updateInstallmentVisibility() {
-            const isInstallment = isInstallmentSelect.value === "yes";
+            const isFixed = expenseTypeSelect.value === "fixed";
+            const isInstallment = !isFixed && isInstallmentSelect.value === "yes";
+
+            repeatMonthsField.hidden = !isFixed;
+            form.elements.repeatMonths.required = isFixed;
+            isInstallmentSelect.disabled = isFixed;
+            if (isFixed) isInstallmentSelect.value = "no";
 
             countField.hidden = !isInstallment;
             scheduleBox.hidden = !isInstallment;
@@ -2922,6 +3126,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         isInstallmentSelect.addEventListener("change", updateInstallmentVisibility);
+        expenseTypeSelect.addEventListener("change", updateInstallmentVisibility);
 
         form.elements.installmentCount.addEventListener("input", () => {
             if (
@@ -3038,7 +3243,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const expenseType = String(formData.get("expenseType") || "variable");
         const totalAmount = Number(formData.get("totalAmount"));
         const firstDate = String(formData.get("firstDate") || "");
-        const isInstallment = formData.get("isInstallment") === "yes";
+        const isFixed = expenseType === "fixed";
+        const repeatMonths = isFixed ? Number(formData.get("repeatMonths")) : 1;
+        const isInstallment = !isFixed && formData.get("isInstallment") === "yes";
 
         const installmentCount = isInstallment
             ? Number(formData.get("installmentCount"))
@@ -3057,6 +3264,56 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (!["fixed", "variable"].includes(expenseType)) {
             showToast("Selecione o tipo de despesa.");
+            return;
+        }
+
+        if (isFixed && (!Number.isInteger(repeatMonths) || repeatMonths < 1 || repeatMonths > 120)) {
+            showToast("Informe por quantos meses a despesa fixa deve se repetir (de 1 a 120).");
+            return;
+        }
+
+        if (isFixed) {
+            const fixedDay = Number(firstDate.slice(8, 10));
+            const createdAt = new Date().toISOString();
+            const recurringGroupId = `recurring-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            const recurringExpenses = Array.from({ length: repeatMonths }, (_, index) => {
+                const dueDate = addMonthsKeepingDay(firstDate, index, fixedDay);
+                const installmentId = `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`;
+                return {
+                    id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 9)}`,
+                    name,
+                    company,
+                    taxId,
+                    expenseType: "fixed",
+                    totalAmount: Math.round(totalAmount * 100) / 100,
+                    installmentCount: 1,
+                    recurringGroupId,
+                    recurrenceIndex: index + 1,
+                    recurrenceCount: repeatMonths,
+                    createdAt,
+                    installments: [{
+                        id: installmentId,
+                        number: 1,
+                        label: `Recorrência ${index + 1}/${repeatMonths}`,
+                        date: dueDate,
+                        amount: Math.round(totalAmount * 100) / 100,
+                        paid: false,
+                        paidAt: null
+                    }]
+                };
+            });
+
+            variableExpenses.push(...recurringExpenses);
+            if (!persistVariableExpenses()) {
+                const createdIds = new Set(recurringExpenses.map((item) => item.id));
+                variableExpenses = variableExpenses.filter((item) => !createdIds.has(item.id));
+                return;
+            }
+
+            closeExpenseForm();
+            renderVariableExpensesPage();
+            updateDashboard();
+            showToast(`Despesa fixa cadastrada para ${repeatMonths} ${repeatMonths === 1 ? "mês" : "meses"}.`);
             return;
         }
 
@@ -3242,6 +3499,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
 
+            if (pageName === "Receitas") {
+                showRevenuePage();
+                return;
+            }
+
             restoreDashboardContent();
 
             if ($("#currentPage")) {
@@ -3398,4 +3660,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     updateDashboard();
     refreshIcons();
+
+    function refreshAtNextDay() {
+        const now = new Date();
+        const nextDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 1, 0);
+        window.setTimeout(() => {
+            todayISO = localISO();
+            updateDashboard();
+            refreshAtNextDay();
+        }, Math.max(1000, nextDay.getTime() - now.getTime()));
+    }
+
+    refreshAtNextDay();
 });

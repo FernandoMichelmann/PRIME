@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, String, func
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, String, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -13,12 +13,13 @@ class PayrollPayment(Base):
     """Pagamento de folha vinculado a empresa, funcionário e competência."""
 
     __tablename__ = "payroll_payments"
-    __table_args__ = (Index("ix_payroll_payments_company_month", "company_id", "month"),)
+    __table_args__ = (Index("ix_payroll_payments_company_month", "company_id", "month"), UniqueConstraint("company_id", "source_item_id", name="uq_payroll_payments_company_source_item"))
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     company_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     employee_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("payroll_employees.id", ondelete="RESTRICT"), nullable=False, index=True)
     month: Mapped[str] = mapped_column(String(7), nullable=False)
+    source_item_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     payment_type: Mapped[str] = mapped_column(String(40), nullable=False, default="outro")
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     due_date: Mapped[date] = mapped_column(Date, nullable=False)

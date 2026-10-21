@@ -13,6 +13,11 @@ class PayrollPeriodItem(BaseModel):
     kind: str = Field(min_length=1, max_length=40)
     amount: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
     created_at: datetime | None = None
+    due_date: date | None = None
+    source: str = Field(default="manual", max_length=40)
+    approved: bool = False
+    payment_id: str | None = Field(default=None, max_length=80)
+    extra_category: str | None = Field(default=None, max_length=40)
 
 
 class PayrollPeriodCreate(BaseModel):
@@ -62,6 +67,7 @@ class PayrollPeriodResponse(BaseModel):
 
 
 class PayrollPaymentCreate(BaseModel):
+    source_item_id: str | None = Field(default=None, max_length=80)
     employee_id: UUID
     month: str
     payment_type: str = Field(default="outro", min_length=1, max_length=40)
@@ -94,9 +100,20 @@ class PayrollPaymentCreate(BaseModel):
 
 
 class PayrollPaymentUpdate(BaseModel):
+    month: str | None = None
+    payment_type: str | None = Field(default=None, min_length=1, max_length=40)
+    amount: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
+    due_date: date | None = None
     status: str | None = None
     paid_at: date | None = None
     method: str | None = Field(default=None, max_length=60)
+
+    @field_validator("month")
+    @classmethod
+    def valid_month(cls, value: str | None) -> str | None:
+        if value is not None and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", value):
+            raise ValueError("Competência deve estar no formato AAAA-MM.")
+        return value
 
     @field_validator("status")
     @classmethod
@@ -109,6 +126,7 @@ class PayrollPaymentUpdate(BaseModel):
 class PayrollPaymentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
+    source_item_id: str | None
     company_id: UUID
     employee_id: UUID
     month: str

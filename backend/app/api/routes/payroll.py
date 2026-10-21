@@ -1,3 +1,4 @@
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -92,6 +93,16 @@ def update_employee(
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(employee, field, value)
 
+    if employee.salary_split and (
+        (employee.salary_day5_amount + employee.salary_day20_amount).quantize(Decimal("0.01"))
+        != employee.salary.quantize(Decimal("0.01"))
+    ):
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A soma das parcelas do 5º dia útil e do dia 20 deve ser igual à remuneração mensal.",
+        )
+
     try:
         db.add(
             AuditLog(
@@ -113,6 +124,71 @@ def update_employee(
             detail="Já existe um funcionário com esse documento nesta transportadora.",
         ) from None
     return employee
+
+
+@router.delete("/employees/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_employee(
+    employee_id: UUID,
+    request: Request,
+    membership=Depends(require_company_permission("payroll.write")),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    employee = db.scalar(
+        select(PayrollEmployee).where(
+            PayrollEmployee.id == employee_id,
+            PayrollEmployee.company_id == membership.company_id,
+        )
+    )
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Funcionário não encontrado.")
+
+    payment = db.scalar(select(PayrollPayment.id).where(
+        PayrollPayment.company_id == membership.company_id,
+        PayrollPayment.employee_id == employee_id,
+    ).limit(1))
+    if payment is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Este funcionário possui pagamentos registrados. Para preservar a auditoria financeira, não é possível excluir o cadastro.",
+        )
+
+    # Sem pagamentos efetivamente registrados, a exclusão do cadastro também
+    # remove suas programações de folha pendentes, inclusive de competências
+    # anteriores, para que itens antigos não bloqueiem a operação.
+    periods = db.scalars(select(PayrollPeriod).where(
+        PayrollPeriod.company_id == membership.company_id,
+    )).all()
+    removed_items = 0
+    affected_periods = 0
+    for period in periods:
+        original_items = list(period.items or [])
+        remaining_items = [
+            item for item in original_items
+            if str(item.get("employee_id", "")) != str(employee_id)
+        ]
+        removed = len(original_items) - len(remaining_items)
+        if removed:
+            period.items = remaining_items
+            removed_items += removed
+            affected_periods += 1
+
+    db.add(AuditLog(
+        company_id=membership.company_id,
+        actor_user_id=user.id,
+        action="payroll.employee.deleted",
+        resource_type="payroll_employee",
+        resource_id=str(employee.id),
+        details={
+            "name": employee.name,
+            "removed_payroll_items": removed_items,
+            "affected_periods": affected_periods,
+        },
+        ip_address=request.client.host if request.client else None,
+    ))
+    db.delete(employee)
+    db.commit()
+    return None
 
 
 @router.patch("/employees/{employee_id}/status", response_model=PayrollEmployeeResponse)
@@ -179,6 +255,60 @@ def _validate_period_items(items: list[dict], company_id, db: Session) -> None:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Uma ou mais rubricas apontam para funcionários inexistentes nesta transportadora.",
         )
+
+
+@router.post("/periods/repair-stale-links")
+def repair_stale_payroll_links(
+    request: Request,
+    membership=Depends(require_company_permission("payroll.write")),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Repair payroll items linked to payment records that no longer exist."""
+    payments = db.scalars(
+        select(PayrollPayment).where(PayrollPayment.company_id == membership.company_id)
+    ).all()
+    valid_payment_ids = {str(payment.id) for payment in payments}
+    valid_source_ids = {
+        str(payment.source_item_id)
+        for payment in payments
+        if payment.source_item_id is not None
+    }
+    periods = db.scalars(
+        select(PayrollPeriod).where(PayrollPeriod.company_id == membership.company_id)
+    ).all()
+    repaired_items = 0
+    repaired_periods = []
+    for period in periods:
+        items = [dict(item) for item in (period.items or [])]
+        changed = False
+        for item in items:
+            payment_id = str(item.get("payment_id") or "")
+            if payment_id and payment_id not in valid_payment_ids:
+                # Do not unlink if a live payment still references this source item.
+                if str(item.get("id") or "") not in valid_source_ids:
+                    item["payment_id"] = None
+                    item["approved"] = False
+                    repaired_items += 1
+                    changed = True
+        if changed:
+            period.items = items
+            repaired_periods.append(str(period.id))
+            db.add(AuditLog(
+                company_id=membership.company_id,
+                actor_user_id=user.id,
+                action="payroll.period.stale_payment_link_repaired",
+                resource_type="payroll_period",
+                resource_id=str(period.id),
+                details={"repaired_items": sum(
+                    1 for item in items
+                    if not item.get("payment_id") and not item.get("approved")
+                )},
+                ip_address=request.client.host if request.client else None,
+            ))
+    if repaired_items:
+        db.commit()
+    return {"repaired_items": repaired_items, "repaired_periods": repaired_periods}
 
 
 @router.get("/periods", response_model=list[PayrollPeriodResponse])
@@ -283,6 +413,13 @@ def create_payroll_payment(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if payload.source_item_id:
+        existing = db.scalar(select(PayrollPayment).where(
+            PayrollPayment.company_id == membership.company_id,
+            PayrollPayment.source_item_id == payload.source_item_id,
+        ))
+        if existing is not None:
+            return existing
     employee = db.scalar(select(PayrollEmployee).where(
         PayrollEmployee.id == payload.employee_id,
         PayrollEmployee.company_id == membership.company_id,
@@ -334,3 +471,56 @@ def update_payroll_payment(
     db.commit()
     db.refresh(payment)
     return payment
+
+
+@router.delete("/payments/{payment_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_payroll_payment(
+    payment_id: UUID,
+    request: Request,
+    membership=Depends(require_company_permission("payroll.write")),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    payment = db.scalar(select(PayrollPayment).where(
+        PayrollPayment.id == payment_id,
+        PayrollPayment.company_id == membership.company_id,
+    ))
+    if payment is None:
+        raise HTTPException(status_code=404, detail="Pagamento não encontrado.")
+    # Ao excluir um pagamento, desfaz o vínculo da programação correspondente.
+    # Isso devolve a rubrica para pendente e restaura as ações de edição/custo extra.
+    periods = db.scalars(select(PayrollPeriod).where(
+        PayrollPeriod.company_id == membership.company_id,
+    )).all()
+    changed_periods = []
+    for period in periods:
+        items = [dict(item) for item in (period.items or [])]
+        changed = False
+        for item in items:
+            linked_by_payment = str(item.get("payment_id") or "") == str(payment.id)
+            linked_by_source = bool(payment.source_item_id) and str(item.get("id") or "") == str(payment.source_item_id)
+            if linked_by_payment or linked_by_source:
+                item["payment_id"] = None
+                item["approved"] = False
+                changed = True
+        if changed:
+            period.items = items
+            changed_periods.append(str(period.id))
+            db.add(AuditLog(
+                company_id=membership.company_id, actor_user_id=user.id,
+                action="payroll.period.payment_unlinked", resource_type="payroll_period",
+                resource_id=str(period.id),
+                details={"payment_id": str(payment.id), "source_item_id": str(payment.source_item_id) if payment.source_item_id else None},
+                ip_address=request.client.host if request.client else None,
+            ))
+    db.add(AuditLog(
+        company_id=membership.company_id, actor_user_id=user.id,
+        action="payroll.payment.deleted", resource_type="payroll_payment",
+        resource_id=str(payment.id),
+        details={"month": payment.month, "amount": str(payment.amount), "status": payment.status,
+                 "unlinked_periods": changed_periods},
+        ip_address=request.client.host if request.client else None,
+    ))
+    db.delete(payment)
+    db.commit()
+    return None
