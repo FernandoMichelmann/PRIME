@@ -94,9 +94,20 @@ class PayrollPaymentCreate(BaseModel):
 
 
 class PayrollPaymentUpdate(BaseModel):
+    month: str | None = None
+    payment_type: str | None = Field(default=None, min_length=1, max_length=40)
+    amount: Decimal | None = Field(default=None, gt=0, max_digits=12, decimal_places=2)
+    due_date: date | None = None
     status: str | None = None
     paid_at: date | None = None
     method: str | None = Field(default=None, max_length=60)
+
+    @field_validator("month")
+    @classmethod
+    def valid_month(cls, value: str | None) -> str | None:
+        if value is not None and not re.fullmatch(r"\\d{4}-(0[1-9]|1[0-2])", value):
+            raise ValueError("Competência deve estar no formato AAAA-MM.")
+        return value
 
     @field_validator("status")
     @classmethod
