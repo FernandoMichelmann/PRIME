@@ -2816,9 +2816,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     function extractDocumentCNPJ(text) {
         const source = String(text || "").replace(/\u00a0/g, " ");
-        const matches = [...source.matchAll(/(?:CNPJ\s*:?\s*)?(\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2})/gi)];
+        // Não aceitar números de CPF/identificação do pagador como CNPJ.
+        // O CNPJ deve estar associado ao rótulo "CNPJ" ou vir formatado como CNPJ.
+        const matches = [...source.matchAll(/(?:CNPJ\s*:?\s*(\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2})|(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}))/gi)];
         for (const match of matches) {
-            const digits = match[1].replace(/\D/g, "");
+            const digits = (match[1] || match[2]).replace(/\D/g, "");
             if (digits.length === 14 && digits !== "00000000000000") {
                 const context = source.slice(Math.max(0, match.index - 180), match.index + 40);
                 if (/benefici[aá]rio|cedente|santander/i.test(context)) return digits;
