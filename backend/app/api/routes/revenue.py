@@ -207,8 +207,12 @@ def invoice_revenue(
     db.add(title)
     _audit(db, user, membership.company_id, request, "revenue.invoiced", "revenue",
            str(revenue.id), {"invoice_number": payload.invoice_number, "title_number": payload.title_number})
-    db.commit()
-    db.refresh(title)
+    try:
+        db.commit()
+        db.refresh(title)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Já existe um título com este número nesta empresa.") from None
     return _title_response(title)
 
 
@@ -274,6 +278,10 @@ def create_receipt(
         ))
     _audit(db, user, membership.company_id, request, "revenue.receipt.created", "revenue_receipt",
            str(receipt.id), {"amount": str(amount), "allocations": len(payload.allocations)})
-    db.commit()
-    db.refresh(receipt)
+    try:
+        db.commit()
+        db.refresh(receipt)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Esta transação já foi registrada para esta empresa.") from None
     return receipt
