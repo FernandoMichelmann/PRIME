@@ -69,9 +69,10 @@
                     <article class="revenue-kpi"><span>RECEBIDO NO PERÍODO</span><strong data-kpi-received>—</strong><small>Entradas registradas por data de pagamento</small></article>
                     <article class="revenue-kpi"><span>CONTAS A RECEBER</span><strong data-kpi-balance>—</strong><small>Saldo de títulos em aberto</small></article>
                     <article class="revenue-kpi"><span>VENCIDO</span><strong data-kpi-overdue>—</strong><small>Saldo de títulos vencidos</small></article>
+                    <article class="revenue-kpi"><span>PENDENTE DE FATURAMENTO</span><strong data-kpi-pending>—</strong><small>Receitas cadastradas ainda não faturadas</small></article>
                 </section>
                 <section class="revenue-panel">
-                    <div class="revenue-panel-heading"><div><h2>Receitas cadastradas</h2><p>Consulte lançamentos reais vinculados à empresa autenticada.</p></div><button type="button" class="revenue-btn secondary" data-revenue-refresh>Atualizar</button></div>
+                    <div class="revenue-panel-heading"><div><h2>Receitas cadastradas</h2><p>Consulte lançamentos reais vinculados à empresa autenticada.</p></div><div class="revenue-heading-actions"><button type="button" class="revenue-btn secondary" data-revenue-export>Exportar CSV</button><button type="button" class="revenue-btn secondary" data-revenue-refresh>Atualizar</button></div></div>
                     <div class="revenue-toolbar"><input type="search" placeholder="Buscar referência, cliente, CT-e ou fatura..." aria-label="Buscar receitas" data-revenue-search><select aria-label="Situação do faturamento" data-revenue-status><option value="">Todas as situações</option><option value="pendente">Pendente de faturamento</option><option value="faturada">Faturada</option></select><button type="button" class="revenue-btn secondary" data-revenue-clear>Limpar</button></div>
                     <div data-revenue-table><div class="revenue-empty">Carregando dados do backend...</div></div>
                 </section>
@@ -98,6 +99,7 @@
         container.querySelector("[data-revenue-cancel]").addEventListener("click", closeForm);
         container.querySelector("[data-revenue-dialog]").addEventListener("click", event => { if (event.target.matches("[data-revenue-dialog]")) closeForm(); });
         container.querySelector("[data-revenue-refresh]").addEventListener("click", load);
+        container.querySelector("[data-revenue-export]").addEventListener("click", exportCSV);
         container.querySelector("[data-revenue-search]").addEventListener("input", filterTable);
         container.querySelector("[data-revenue-status]").addEventListener("change", filterTable);
         container.querySelector("[data-revenue-clear]").addEventListener("click", () => {
@@ -107,6 +109,37 @@
         });
         container.querySelector("[data-revenue-form]").addEventListener("submit", save);
         load();
+    }
+
+    function exportCSV() {
+        const term = container.querySelector("[data-revenue-search]").value.trim().toLocaleLowerCase("pt-BR");
+        const state = container.querySelector("[data-revenue-status]").value;
+        const rows = revenues.filter(row => {
+            const text = [row.reference, row.customer_name, row.description, row.cte_number, row.invoice_number]
+                .join(" ").toLocaleLowerCase("pt-BR");
+            return (!term || text.includes(term)) && (!state || row.billing_status === state);
+        });
+        const columns = [
+            ["Referência", "reference"], ["Cliente", "customer_name"], ["Descrição", "description"],
+            ["Categoria", "category"], ["Modalidade", "transport_mode"], ["CT-e", "cte_number"],
+            ["Competência", "competency_date"], ["Data do serviço", "service_date"],
+            ["Faturamento", "issue_date"], ["Situação", "billing_status"],
+            ["Valor-base", "base_amount"], ["Adicionais", "additions_amount"],
+            ["Pedágio", "toll_amount"], ["Desconto", "discount_amount"], ["Total", "total_amount"]
+        ];
+        const quote = value => '"' + String(value ?? "").replace(/"/g, '""') + '"';
+        const csv = "\\uFEFF" + [
+            columns.map(column => quote(column[0])).join(";"),
+            ...rows.map(row => columns.map(column => quote(row[column[1]])).join(";"))
+        ].join("\\r\\n");
+        const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = "prime-receitas-" + today() + ".csv";
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
     }
 
     function openForm() {
@@ -128,6 +161,7 @@
             container.querySelector("[data-kpi-received]").textContent = money(dashboard.received_total);
             container.querySelector("[data-kpi-balance]").textContent = money(dashboard.receivable_balance);
             container.querySelector("[data-kpi-overdue]").textContent = money(dashboard.overdue_balance);
+            container.querySelector("[data-kpi-pending]").textContent = money(dashboard.pending_billing_total);
             filterTable();
         } catch (error) {
             table.innerHTML = '<div class="revenue-message error">' + esc(error.message || "Não foi possível carregar as receitas.") + '<br>Verifique se a API está ativa e se seu usuário tem permissão financeira.</div>';
