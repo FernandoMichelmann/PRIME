@@ -232,7 +232,7 @@
             const descriptions=items.map(i=>i.description);
             const groupIds=pending.map(i=>i.id).join(",");
             const editable=items.some(i=>!i.paymentId&&!i.approved);
-            return '<tr><td><strong>'+esc(employee?.name||"Colaborador")+'</strong><small>'+esc(employee?.role||employee?.department||"")+'</small></td><td>'+descriptions.map(esc).join(" + ")+'</td><td>'+formatFullDate(date)+'</td><td>'+money(total)+'</td><td>'+(sent?"Enviado para pagamento":pending.length<items.length?"Parcialmente enviado":"Previsto — não aprovado")+'</td><td><div style="display:flex;gap:6px;flex-wrap:wrap">'+(editable?'<button type="button" class="button-secondary payroll-small-button" data-p-extra-toggle="'+esc(base.id)+'">Adicionar custo extra</button><button type="button" class="button-primary payroll-small-button" data-p-send-group="'+esc(groupIds)+'">Aprovar e enviar para pagamento</button>':'')+(pending.length?'<button type="button" class="button-secondary payroll-small-button" data-p-delete-row="'+esc(groupIds)+'">Excluir da folha</button>':'')+'<button type="button" class="button-secondary payroll-small-button" data-p-edit-toggle="'+esc(base.id)+'">Editar</button></div></td></tr>'+
+            return '<tr><td><strong>'+esc(employee?.name||"Colaborador")+'</strong><small>'+esc(employee?.role||employee?.department||"")+'</small></td><td>'+descriptions.map(esc).join(" + ")+'</td><td>'+formatFullDate(date)+'</td><td>'+money(total)+'</td><td>'+(sent?"Enviado para pagamento":pending.length<items.length?"Parcialmente enviado":"Previsto — não aprovado")+'</td><td><div style="display:flex;gap:6px;flex-wrap:wrap">'+(editable?'<button type="button" class="button-secondary payroll-small-button" data-p-extra-toggle="'+esc(base.id)+'">Adicionar custo extra</button><button type="button" class="button-primary payroll-small-button" data-p-send-group="'+esc(groupIds)+'">Aprovar e enviar para pagamento</button>':'')+(pending.length?'<button type="button" class="button-secondary payroll-small-button" data-p-delete-row="'+esc(groupIds)+'">Excluir da folha</button>':'')+(!items.some(i=>i.paymentId)?'<button type="button" class="button-secondary payroll-small-button" data-p-delete-program="'+esc(groupIds)+'">Excluir programação</button>':'')+'<button type="button" class="button-secondary payroll-small-button" data-p-edit-toggle="'+esc(base.id)+'">Editar</button></div></td></tr>'+
             '<tr><td colspan="6"><form class="payroll-form" data-p-edit-form="'+esc(base.id)+'" style="display:none;padding:14px"><strong>Editar valores — '+esc(employee?.name||"Colaborador")+'</strong>'+items.map(i=>{
                 const canEdit=!i.paymentId&&!i.approved;
                 return '<div style="display:grid;grid-template-columns:minmax(140px,1fr) minmax(120px,180px) auto;gap:10px;align-items:end;margin-top:10px"><label>'+esc(i.description)+'<input type="number" min="0" step="0.01" name="amount-'+esc(i.id)+'" value="'+esc(i.amount)+'" '+(canEdit?'':'disabled')+'></label><span class="payroll-muted" style="padding-bottom:10px">'+(i.source==="extra_cost"?"Custo extra":"Salário")+(canEdit?"":" · já enviado")+'</span>'+(i.source==="extra_cost"&&canEdit?'<button type="button" class="button-secondary payroll-small-button" data-p-delete-extra="'+esc(i.id)+'">Excluir custo</button>':'')+'</div>';
@@ -365,6 +365,26 @@
         }));
         host.querySelectorAll("[data-p-edit-cancel]").forEach(b=>b.addEventListener("click",()=>{
             const form=host.querySelector('[data-p-edit-form="'+CSS.escape(b.dataset.pEditCancel)+'"]');if(form)form.style.display="none";
+        }));
+        host.querySelectorAll("[data-p-delete-program]").forEach(b=>b.addEventListener("click",async()=>{
+            const current=period();
+            if(!current||!window.PRIMEAuth)return;
+            const ids=b.dataset.pDeleteProgram.split(",").filter(Boolean);
+            const selected=current.items.filter(i=>ids.includes(String(i.id)));
+            if(!selected.length)return;
+            if(selected.some(i=>i.paymentId)){
+                alert("Esta programação possui pagamento vinculado. Exclua primeiro o pagamento correspondente para liberar a programação.");
+                return;
+            }
+            const employeeName=employeeById(selected[0].employeeId)?.name||"este funcionário";
+            if(!confirm("Excluir a programação desta parcela de "+employeeName+" da folha de "+month+"? O cadastro do funcionário será mantido."))return;
+            try{
+                const removeIds=new Set(selected.map(i=>String(i.id)));
+                const items=current.items.filter(i=>!removeIds.has(String(i.id))).map(i=>({id:i.id,employee_id:i.employeeId,description:i.description,kind:i.kind,amount:i.amount,created_at:i.createdAt||null,due_date:i.dueDate||null,source:i.source||"manual",approved:Boolean(i.approved),payment_id:i.paymentId||null,extra_category:i.extraCategory||null}));
+                await window.PRIMEAuth.requestCompany("/payroll/periods/"+encodeURIComponent(current.id),{method:"PATCH",body:JSON.stringify({items})});
+                await syncRemoteRecords();draw();
+                alert("Programação excluída da folha mensal. O cadastro e os pagamentos já registrados foram preservados.");
+            }catch(error){alert(error.message||"Não foi possível excluir a programação.");}
         }));
         host.querySelectorAll("[data-p-delete-row]").forEach(b=>b.addEventListener("click",async()=>{
             const current=period();
