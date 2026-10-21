@@ -12,8 +12,20 @@ class PayrollEmployeeBase(BaseModel):
     role: str | None = Field(default=None, max_length=120)
     department: str | None = Field(default=None, max_length=100)
     cost_center: str | None = Field(default=None, max_length=100)
+    phone: str | None = Field(default=None, max_length=30)
+    address: str | None = Field(default=None, max_length=180)
+    address_number: str | None = Field(default=None, max_length=30)
+    postal_code: str | None = Field(default=None, max_length=9)
+    city: str | None = Field(default=None, max_length=100)
+    state: str | None = Field(default=None, min_length=2, max_length=2)
+    marital_status: str | None = Field(default=None, max_length=20)
     start_date: date
+    contract_end_date: date | None = None
     salary: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=12, decimal_places=2)
+    salary_split: bool = False
+    salary_day5_amount: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=12, decimal_places=2)
+    salary_day20_amount: Decimal = Field(default=Decimal("0.00"), ge=0, max_digits=12, decimal_places=2)
+    integral_payment_day: str | None = Field(default=None, max_length=40)
     is_active: bool = True
 
     @field_validator("name")
@@ -44,8 +56,20 @@ class PayrollEmployeeUpdate(BaseModel):
     role: str | None = Field(default=None, max_length=120)
     department: str | None = Field(default=None, max_length=100)
     cost_center: str | None = Field(default=None, max_length=100)
+    phone: str | None = Field(default=None, max_length=30)
+    address: str | None = Field(default=None, max_length=180)
+    address_number: str | None = Field(default=None, max_length=30)
+    postal_code: str | None = Field(default=None, max_length=9)
+    city: str | None = Field(default=None, max_length=100)
+    state: str | None = Field(default=None, min_length=2, max_length=2)
+    marital_status: str | None = Field(default=None, max_length=20)
     start_date: date | None = None
+    contract_end_date: date | None = None
     salary: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    salary_split: bool | None = None
+    salary_day5_amount: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    salary_day20_amount: Decimal | None = Field(default=None, ge=0, max_digits=12, decimal_places=2)
+    integral_payment_day: str | None = Field(default=None, max_length=40)
     is_active: bool | None = None
 
     @field_validator("name")
