@@ -238,9 +238,20 @@ document.addEventListener("DOMContentLoaded", () => {
         return ordinaryExpenses + registeredExpenses + getFinalizedTripTotals(month).expense + getMonthlyVehicleMaintenanceTotal(month) + payrollCost;
     }
 
+    function getPaidRevenueRecords() {
+        try {
+            const rows = JSON.parse(localStorage.getItem("primeRevenueDemoV1") || "[]");
+            return Array.isArray(rows) ? rows.filter((row) => row.payment_status === "recebido") : [];
+        } catch (error) {
+            console.error("Não foi possível ler as receitas recebidas:", error);
+            return [];
+        }
+    }
+
     function getMonthlyRevenueTotal(month = currentMonth()) {
         const ordinaryRevenue = getMonthTransactions(month).filter((item) => item.type === "revenue").reduce((sum, item) => sum + item.amount, 0);
-        return ordinaryRevenue + getFinalizedTripTotals(month).revenue;
+        const receivedRevenue = getPaidRevenueRecords().filter((item) => monthKey(item.payment_date) === month).reduce((sum, item) => sum + (Number(item.received_amount ?? item.total_amount) || 0), 0);
+        return ordinaryRevenue + receivedRevenue + getFinalizedTripTotals(month).revenue;
     }
 
     function getTotals(items) {
@@ -269,7 +280,8 @@ document.addEventListener("DOMContentLoaded", () => {
             return totals;
         }, { revenue: 0, expense: 0 });
         const paidPayroll = window.PRIMEPayroll ? window.PRIMEPayroll.getPaidPaymentsTotal() : 0;
-        return ordinaryTotals.revenue - ordinaryTotals.expense - paidInstallments - paidPayroll + finalizedTrips.revenue - finalizedTrips.expense;
+        const receivedRevenue = getPaidRevenueRecords().reduce((sum, item) => sum + (Number(item.received_amount ?? item.total_amount) || 0), 0);
+        return ordinaryTotals.revenue + receivedRevenue - ordinaryTotals.expense - paidInstallments - paidPayroll + finalizedTrips.revenue - finalizedTrips.expense;
     }
 
     function getExpenseCategories() {
@@ -333,7 +345,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const revenueCount = monthlyTransactions.filter(
             (item) => item.type === "revenue"
-        ).length;
+        ).length + getPaidRevenueRecords().filter((item) => monthKey(item.payment_date) === currentMonth()).length;
 
         const expenseCount =
             monthlyTransactions.filter((item) => item.type === "expense").length +
@@ -608,6 +620,8 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    window.addEventListener("prime:revenues-updated", () => { updateDashboard(); });
+
     function updateCharts() {
         const period = $("#cashflowPeriod");
         initCashflowChart(period ? Number(period.value) : 6);
@@ -626,13 +640,15 @@ document.addEventListener("DOMContentLoaded", () => {
             ? $("#globalSearch").value.trim().toLocaleLowerCase("pt-BR")
             : "";
 
-        const filtered = transactions.filter((item) => {
-            const searchable = [
-                item.description,
-                item.type === "revenue" ? "receita" : "despesa",
-                item.category || ""
-            ].join(" ").toLocaleLowerCase("pt-BR");
-
+        const revenueTransactions = getPaidRevenueRecords().map((item) => ({
+            description: item.description || ("Receita " + item.reference),
+            type: "revenue", category: item.category || "Frete",
+            amount: Number(item.received_amount ?? item.total_amount) || 0,
+            date: item.payment_date, reference: item.reference, customer_name: item.customer_name
+        }));
+        const allTransactions = [...transactions, ...revenueTransactions];
+        const filtered = allTransactions.filter((item) => {
+            const searchable = [item.description, item.customer_name || "", item.reference || "", item.type === "revenue" ? "receita" : "despesa", item.category || ""].join(" ").toLocaleLowerCase("pt-BR");
             return searchable.includes(query);
         });
 
