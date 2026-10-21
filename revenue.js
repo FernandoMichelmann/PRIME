@@ -24,7 +24,7 @@
         .revenue-table th{font-size:10px;text-transform:uppercase;letter-spacing:.45px;color:var(--muted,#94A3B8)}.revenue-table td{font-size:12px}
         .revenue-table td strong,.revenue-table td small{display:block}.revenue-table td small{color:var(--muted,#94A3B8);font-size:10px;margin-top:4px}
         .revenue-state{display:inline-flex;padding:5px 8px;border-radius:5px;background:#172A42;color:#A8D1FF;font-size:10px;font-weight:700}
-        .revenue-state.paid{background:#12352D;color:#86EFAC}.revenue-actions{display:flex;gap:6px;align-items:center}.revenue-actions .revenue-btn{padding:7px 9px;font-size:11px}.revenue-btn.danger{background:#351A24;border-color:#713044;color:#FCA5A5}.revenue-btn.danger:hover{background:#51202F}.revenue-btn.paid-button{background:#12352D;border-color:#21634F;color:#86EFAC}
+        .revenue-state.paid{background:#12352D;color:#86EFAC}.revenue-state.overdue{background:#3A1D27;color:#FCA5A5}.revenue-state.open{background:#172A42;color:#A8D1FF}.revenue-state.upcoming{background:#332A17;color:#FDE68A}.revenue-actions{display:flex;gap:6px;align-items:center}.revenue-actions .revenue-btn{padding:7px 9px;font-size:11px}.revenue-btn.danger{background:#351A24;border-color:#713044;color:#FCA5A5}.revenue-btn.danger:hover{background:#51202F}.revenue-btn.paid-button{background:#12352D;border-color:#21634F;color:#86EFAC}
         .revenue-empty,.revenue-message{padding:24px;text-align:center;color:var(--muted,#94A3B8);line-height:1.7}.revenue-message.error{color:#FCA5A5}
         .revenue-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.revenue-form label{display:flex;flex-direction:column;gap:7px;color:var(--muted,#94A3B8);font-size:11px;font-weight:600;min-width:0}
         .revenue-form input,.revenue-form select,.revenue-form textarea{width:100%;min-width:0}.revenue-form .wide{grid-column:1/-1}.revenue-form textarea{min-height:78px;resize:vertical}
@@ -50,6 +50,7 @@
     let dashboard = null;
     let busy = false;
     let editingReference = null;
+    let receivingReference = null;
 
     const STORAGE_KEY = "primeRevenueDemoV1";
 
@@ -114,7 +115,7 @@
                             <label>Cliente contratante *<input name="customer_name" required maxlength="180"></label>
                             <label>Tipo de receita<select name="category"><option value="frete_fracionado">Frete de carga fracionada</option><option value="frete_lotacao">Frete de lotação</option><option value="transporte_dedicado">Transporte dedicado</option><option value="armazenagem">Armazenagem</option><option value="servico_logistico">Serviço logístico</option><option value="reembolso">Reembolso contratado</option><option value="outra">Outra receita</option></select></label>
                             <label class="wide">Descrição do serviço *<input name="description" required maxlength="500" placeholder="Ex.: transporte rodoviário de carga"></label>
-                            <label>Data de competência<input name="competency_date" type="date"></label><label>Data do serviço<input name="service_date" type="date"></label><label>Modalidade de transporte<input name="transport_mode" maxlength="60" placeholder="Fracionado, lotação..."></label>
+                            <label>Vencimento da fatura *<input name="due_date" type="date" required></label><label>Data de competência<input name="competency_date" type="date"></label><label>Modalidade de transporte<input name="transport_mode" maxlength="60" placeholder="Fracionado, lotação..."></label>
                             <label>Referência da operação<input name="operation_reference" maxlength="100"></label><label>Número do CT-e<input name="cte_number" maxlength="80"></label><label>Peso (kg)<input name="weight_kg" type="number" min="0" step="0.001"></label>
                             <label>Origem<input name="origin" maxlength="180"></label><label>Destino<input name="destination" maxlength="180"></label><label>Valor-base (R$) *<input name="base_amount" type="number" min="0.01" step="0.01" required></label>
                             <label>Adicionais (R$)<input name="additions_amount" type="number" min="0" step="0.01" value="0"></label><label>Pedágio repassado (R$)<input name="toll_amount" type="number" min="0" step="0.01" value="0"></label><label>Desconto autorizado (R$)<input name="discount_amount" type="number" min="0" step="0.01" value="0"></label>
@@ -122,6 +123,16 @@
                             <div class="revenue-form-actions"><button type="button" class="revenue-btn secondary" data-revenue-cancel>Cancelar</button><button type="submit" class="revenue-btn">Salvar receita</button></div>
                         </form>
                         <p class="revenue-message" data-revenue-form-message role="status"></p>
+                    </section>
+                </div>
+                <div class="revenue-dialog" data-payment-dialog hidden>
+                    <section class="revenue-dialog-card" role="dialog" aria-modal="true" aria-labelledby="revenuePaymentTitle" style="max-width:480px">
+                        <h2 id="revenuePaymentTitle">Baixar fatura</h2>
+                        <p>Informe a data em que o pagamento do cliente foi efetivamente recebido.</p>
+                        <form class="revenue-form" data-payment-form style="grid-template-columns:1fr">
+                            <label>Data do pagamento *<input name="payment_date" type="date" required></label>
+                            <div class="revenue-form-actions"><button type="button" class="revenue-btn secondary" data-payment-cancel>Cancelar</button><button type="submit" class="revenue-btn">Confirmar baixa</button></div>
+                        </form>
                     </section>
                 </div>
             </section>`;
@@ -139,6 +150,9 @@
         });
         container.querySelector("[data-revenue-form]").addEventListener("submit", save);
         container.querySelector("[data-revenue-table]").addEventListener("click", handleRevenueAction);
+        container.querySelector("[data-payment-cancel]").addEventListener("click", closePaymentDialog);
+        container.querySelector("[data-payment-dialog]").addEventListener("click", event => { if (event.target.matches("[data-payment-dialog]")) closePaymentDialog(); });
+        container.querySelector("[data-payment-form]").addEventListener("submit", confirmPayment);
         load();
     }
 
@@ -186,12 +200,56 @@
             const field = form.elements.namedItem(key);
             if (field && value !== null && value !== undefined) field.value = value;
         });
+        if (record && form.elements.due_date) form.elements.due_date.value = getDueDate(record);
         container.querySelector("[data-revenue-dialog]").hidden = false;
         form.querySelector('[name="reference"]').focus();
     }
     function closeForm() {
         container.querySelector("[data-revenue-dialog]").hidden = true;
         editingReference = null;
+    }
+
+    function getDueDate(record) { return record.due_date || record.competency_date || record.service_date || ""; }
+
+    function getBillingState(record) {
+        if (record.payment_status === "recebido") return { label: "Pago", css: "paid" };
+        const due = getDueDate(record);
+        if (!due) return { label: "Sem vencimento", css: "upcoming" };
+        if (today() > due) return { label: "Vencido", css: "overdue" };
+        const days = Math.round((new Date(due + "T00:00:00Z") - new Date(today() + "T00:00:00Z")) / 86400000);
+        if (days <= 10) return { label: "Em aberto", css: "open" };
+        return { label: "A vencer", css: "upcoming" };
+    }
+
+    function openPaymentDialog(reference) {
+        receivingReference = reference;
+        const form = container.querySelector("[data-payment-form]");
+        form.reset();
+        form.elements.payment_date.value = today();
+        container.querySelector("[data-payment-dialog]").hidden = false;
+        form.elements.payment_date.focus();
+    }
+
+    function closePaymentDialog() {
+        container.querySelector("[data-payment-dialog]").hidden = true;
+        receivingReference = null;
+    }
+
+    function confirmPayment(event) {
+        event.preventDefault();
+        if (!receivingReference) return;
+        const form = event.currentTarget;
+        if (!form.reportValidity()) return;
+        const paymentDate = form.elements.payment_date.value;
+        if (paymentDate > today()) { window.alert("A data do pagamento não pode ser futura."); return; }
+        const previous = revenues;
+        revenues = revenues.map(row => row.reference === receivingReference ? { ...row, billing_status: "faturada", payment_status: "recebido", payment_date: paymentDate, received_amount: Number(row.total_amount) || 0, updated_at: new Date().toISOString() } : row);
+        try {
+            persistLocalRevenues();
+            closePaymentDialog();
+            load();
+            window.dispatchEvent(new CustomEvent("prime:revenues-updated"));
+        } catch (error) { revenues = previous; window.alert(error.message || "Não foi possível registrar o pagamento."); }
     }
 
     function handleRevenueAction(event) {
@@ -210,11 +268,13 @@
             catch (error) { revenues = previous; window.alert(error.message || "Não foi possível excluir a receita."); }
         } else if (button.dataset.revenueAction === "receive") {
             if (record.payment_status === "recebido") return;
-            if (!window.confirm("Confirmar que o cliente " + record.customer_name + " pagou " + money(record.total_amount) + "? O valor será registrado como recebido no saldo financeiro.")) return;
+            openPaymentDialog(reference);
+        } else if (button.dataset.revenueAction === "reopen") {
+            if (!window.confirm("Reabrir a fatura " + record.reference + "? O valor será retirado do saldo recebido e voltará para Contas a Receber.")) return;
             const previous = revenues;
-            revenues = revenues.map(row => row.reference === reference ? { ...row, payment_status: "recebido", payment_date: today(), received_amount: Number(row.total_amount) || 0 } : row);
-            try { persistLocalRevenues(); load(); }
-            catch (error) { revenues = previous; window.alert(error.message || "Não foi possível registrar o recebimento."); }
+            revenues = revenues.map(row => row.reference === reference ? { ...row, billing_status: "pendente", payment_status: "pendente", payment_date: null, received_amount: 0, updated_at: new Date().toISOString() } : row);
+            try { persistLocalRevenues(); load(); window.dispatchEvent(new CustomEvent("prime:revenues-updated")); }
+            catch (error) { revenues = previous; window.alert(error.message || "Não foi possível reabrir a fatura."); }
         }
     }
 
@@ -244,8 +304,8 @@
             table.innerHTML = '<div class="revenue-empty">Nenhuma receita encontrada. Cadastre a primeira receita ou ajuste os filtros.</div>';
             return;
         }
-        table.innerHTML = '<div class="revenue-table-wrap"><table class="revenue-table"><thead><tr><th>Referência / cliente</th><th>Serviço</th><th>Data do serviço</th><th>Faturamento</th><th>Pagamento</th><th class="align-right">Valor total</th><th>Ações</th></tr></thead><tbody>' +
-            rows.map(row => { const paid = row.payment_status === "recebido"; const ref = esc(row.reference); return '<tr><td><strong>' + ref + '</strong><small>' + esc(row.customer_name) + '</small></td><td>' + esc(row.description) + '<small>' + esc(row.cte_number ? "CT-e " + row.cte_number : row.operation_reference || "Sem operação vinculada") + '</small></td><td>' + dateLabel(row.service_date) + '</td><td><span class="revenue-state">' + (row.billing_status === "faturada" ? "Faturada" : "Pendente") + '</span></td><td><span class="revenue-state ' + (paid ? "paid" : "") + '">' + (paid ? "Recebido em " + dateLabel(row.payment_date) : "A receber") + '</span></td><td class="align-right"><strong>' + money(row.total_amount) + '</strong></td><td><div class="revenue-actions"><button type="button" class="revenue-btn secondary" data-revenue-action="edit" data-reference="' + ref + '">Editar</button><button type="button" class="revenue-btn danger" data-revenue-action="delete" data-reference="' + ref + '">Excluir</button><button type="button" class="revenue-btn ' + (paid ? "paid-button" : "") + '" data-revenue-action="receive" data-reference="' + ref + '" ' + (paid ? "disabled" : "") + '>' + (paid ? "Baixado" : "Baixar") + '</button></div></td></tr>'; }).join("") +
+        table.innerHTML = '<div class="revenue-table-wrap"><table class="revenue-table"><thead><tr><th>Referência / cliente</th><th>Serviço</th><th>Vencimento da fatura</th><th>Faturamento</th><th>Pagamento</th><th class="align-right">Valor total</th><th>Ações</th></tr></thead><tbody>' +
+            rows.map(row => { const paid = row.payment_status === "recebido"; const ref = esc(row.reference); const state = getBillingState(row); return '<tr><td><strong>' + ref + '</strong><small>' + esc(row.customer_name) + '</small></td><td>' + esc(row.description) + '<small>' + esc(row.cte_number ? "CT-e " + row.cte_number : row.operation_reference || "Sem operação vinculada") + '</small></td><td>' + dateLabel(getDueDate(row)) + '</td><td><span class="revenue-state ' + state.css + '">' + state.label + '</span></td><td><span class="revenue-state ' + (paid ? "paid" : "") + '">' + (paid ? "Pago em " + dateLabel(row.payment_date) : "A receber") + '</span></td><td class="align-right"><strong>' + money(row.total_amount) + '</strong></td><td><div class="revenue-actions"><button type="button" class="revenue-btn secondary" data-revenue-action="' + (paid ? "reopen" : "edit") + '" data-reference="' + ref + '">' + (paid ? "Reabrir fatura" : "Editar") + '</button><button type="button" class="revenue-btn danger" data-revenue-action="delete" data-reference="' + ref + '">Excluir</button><button type="button" class="revenue-btn ' + (paid ? "paid-button" : "") + '" data-revenue-action="receive" data-reference="' + ref + '" ' + (paid ? "disabled" : "") + '>' + (paid ? "Baixado" : "Baixar") + '</button></div></td></tr>'; }).join("") +
             '</tbody></table></div>';
     }
 
@@ -256,7 +316,8 @@
         const submit = form.querySelector('[type="submit"]');
         const message = container.querySelector("[data-revenue-form-message]");
         const data = Object.fromEntries(new FormData(form));
-        ["competency_date","service_date","transport_mode","operation_reference","cte_number","origin","destination","weight_kg","notes"].forEach(key => { if (!data[key]) data[key] = null; });
+        ["due_date","competency_date","service_date","transport_mode","operation_reference","cte_number","origin","destination","weight_kg","notes"].forEach(key => { if (!data[key]) data[key] = null; });
+        if (!data.due_date) data.due_date = data.competency_date || data.service_date || null;
         ["base_amount","additions_amount","toll_amount","discount_amount"].forEach(key => { data[key] = String(Number(data[key] || 0).toFixed(2)); });
         if (data.weight_kg !== null) data.weight_kg = String(data.weight_kg);
         busy = true; submit.disabled = true; submit.textContent = "Salvando...";
@@ -279,6 +340,7 @@
                 reference: String(data.reference || "").trim(),
                 customer_name: String(data.customer_name || "").trim(),
                 description: String(data.description || "").trim(),
+                due_date: data.due_date,
                 billing_status: existing ? existing.billing_status : "pendente",
                 payment_status: existing ? existing.payment_status : "pendente",
                 payment_date: existing ? existing.payment_date : null,
@@ -294,6 +356,7 @@
             catch (error) { revenues = previous; throw error; }
             closeForm();
             await load();
+            window.dispatchEvent(new CustomEvent("prime:revenues-updated"));
         } catch (error) {
             message.classList.add("error");
             message.textContent = error.message || "Não foi possível salvar a receita.";
