@@ -428,8 +428,8 @@
         getPaidPaymentsTotal:paidTotal,
         getPaidPaymentsInMonth:paidInMonth,
         getPaidPaymentsThroughDate:(dateLimit)=>data.payments.filter(p=>{const paidDate=String(p.paidAt||p.dueDate||"").slice(0,10);return p.status==="pago"&&Boolean(paidDate)&&paidDate<=dateLimit;}).reduce((s,p)=>s+Number(p.amount||0),0),
-        getPendingPaymentsForDate:(date)=>data.payments.filter(p=>p.status!=="pago"&&String(p.dueDate||"").slice(0,10)===date).reduce((s,p)=>s+Number(p.amount||0),0),
-        getPendingPaymentsTotal:(monthLimit)=>data.payments.filter(p=>p.status!=="pago"&&(!monthLimit||((p.dueDate&&String(p.dueDate).slice(0,7)<=monthLimit)||(!p.dueDate&&String(p.month||"")<=monthLimit)))).reduce((s,p)=>s+Number(p.amount||0),0),
+        getPendingPaymentsForDate:(date)=>data.payments.filter(p=>p.status!=="pago"&&String(p.dueDate||"").slice(0,10)===date).reduce((s,p)=>s+Number(p.amount||0),0)+data.periods.reduce((sum,p)=>sum+(p.items||[]).filter(i=>!i.approved&&!i.paymentId&&String(i.dueDate||"").slice(0,10)===date).reduce((s,i)=>s+Number(i.amount||0),0),0),
+        getPendingPaymentsTotal:(monthLimit)=>data.payments.filter(p=>p.status!=="pago"&&(!monthLimit||((p.dueDate&&String(p.dueDate).slice(0,7)<=monthLimit)||(!p.dueDate&&String(p.month||"")<=monthLimit)))).reduce((s,p)=>s+Number(p.amount||0),0)+data.periods.reduce((sum,p)=>sum+(p.items||[]).filter(i=>!i.approved&&!i.paymentId&&(!monthLimit||(i.dueDate&&String(i.dueDate).slice(0,7)<=monthLimit))).reduce((s,i)=>s+Number(i.amount||0),0),0),
         onBack:null
     };
     window.addEventListener("prime:auth-ready",()=>{
