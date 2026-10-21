@@ -2741,90 +2741,49 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function extractDocumentAmount(text) {
-        // PDFs de boletos frequentemente chegam como uma única linha de texto.
-        // Por isso, procuramos o valor imediatamente associado ao rótulo,
-        // sem depender de que o PDF preserve as quebras de linha.
-        const source = String(text || "")
-            .replace(/\\u00a0/g, " ")
-            .replace(/[ \\t]+/g, " ");
-
-        const amountPattern = "(\\\\d{1,3}(?:\\\\.\\\\d{3})*,\\\\d{2}|\\\\d+,\\\\d{2}|\\\\d{1,3}(?:,\\\\d{3})*\\\\.\\\\d{2}|\\\\d+\\\\.\\\\d{2})";
+        const source = String(text || "").replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ");
+        const amountPattern = "(\\d{1,3}(?:\\.\\d{3})*,\\d{2}|\\d+,\\d{2}|\\d{1,3}(?:,\\d{3})*\\.\\d{2}|\\d+\\.\\d{2})";
         const labels = [
-            /valor\\s+do\\s+documento/i,
-            /valor\\s+cobrado/i,
-            /total\\s+a\\s+pagar/i,
-            /valor\\s+a\\s+pagar/i,
-            /valor\\s+da\\s+fatura/i,
-            /total\\s+da\\s+fatura/i,
-            /valor\\s+do\\s+boleto/i,
-            /valor\\s+total/i,
-            /valor\\s+final/i,
-            /total\\s+geral/i
+            /valor\s+do\s+documento/i, /valor\s+cobrado/i, /total\s+a\s+pagar/i,
+            /valor\s+a\s+pagar/i, /valor\s+da\s+fatura/i, /total\s+da\s+fatura/i,
+            /valor\s+do\s+boleto/i, /valor\s+total/i, /valor\s+final/i, /total\s+geral/i
         ];
 
         function parseAmount(value) {
-            let normalized = String(value).trim().replace(/\\s/g, "");
-            if (normalized.includes(",")) {
-                normalized = normalized.replace(/\\./g, "").replace(",", ".");
-            }
+            let normalized = String(value).trim().replace(/\s/g, "");
+            if (normalized.includes(",")) normalized = normalized.replace(/\./g, "").replace(",", ".");
             const amount = Number(normalized);
             return Number.isFinite(amount) && amount > 0 ? amount : null;
         }
 
         for (const label of labels) {
             const flags = label.flags.includes("g") ? label.flags : label.flags + "g";
-            const matches = [...source.matchAll(new RegExp(label.source, flags))];
-
-            for (const match of matches) {
-                // Limita a busca ao trecho após o rótulo, antes de outro campo
-                // financeiro, para não confundir desconto ou multa com o total.
+            for (const match of source.matchAll(new RegExp(label.source, flags))) {
                 const afterLabel = source.slice(match.index + match[0].length, match.index + match[0].length + 100);
-                const nextField = afterLabel.search(/(?:desconto\\s*\\/\\s*abatimento|outras\\s+deducoes|mora\\s*\\/\\s*multa|outros\\s+acrescimos|nosso\\s+numero|pagador|beneficiario|cedente)/i);
+                const nextField = afterLabel.search(/(?:desconto\s*\/\s*abatimento|outras\s+deducoes|mora\s*\/\s*multa|outros\s+acrescimos|nosso\s+numero|pagador|beneficiario|cedente)/i);
                 const candidate = nextField >= 0 ? afterLabel.slice(0, nextField) : afterLabel;
-                const valueMatch = candidate.match(new RegExp("^\\\\s*(?:\\\\(=\\\\)\\\\s*)?(?:R\\\\$\\\\s*)?" + amountPattern));
-                if (valueMatch) {
-                    const amount = parseAmount(valueMatch[1]);
-                    if (amount !== null) return amount;
-                }
-
-                // Alguns PDFs intercalam símbolos/colunas entre o rótulo e o valor.
-                const nearbyMatch = candidate.match(new RegExp("(?:R\\\\$\\\\s*)?" + amountPattern));
+                const valueMatch = candidate.match(new RegExp("^\\s*(?:\\(=\\)\\s*)?(?:R\\$\\s*)?" + amountPattern));
+                const nearbyMatch = valueMatch || candidate.match(new RegExp("(?:R\\$\\s*)?" + amountPattern));
                 if (nearbyMatch) {
                     const amount = parseAmount(nearbyMatch[1]);
                     if (amount !== null) return amount;
                 }
             }
         }
-
         return null;
     }
 
     function extractDocumentDueDate(text) {
-        const source = String(text || "")
-            .replace(/\\u00a0/g, " ")
-            .replace(/[ \\t]+/g, " ");
-
-        const datePattern = "\\\\b(\\\\d{2})[\\\\/.-](\\\\d{2})[\\\\/.-](\\\\d{4})\\\\b|\\\\b(\\\\d{4})-(\\\\d{2})-(\\\\d{2})\\\\b";
-        const labels = [
-            /data\\s+de\\s+vencimento/i,
-            /vencimento/i,
-            /pagar\\s+ate/i,
-            /pague\\s+ate/i,
-            /venc\\./i
-        ];
+        const source = String(text || "").replace(/\u00a0/g, " ").replace(/[ \t]+/g, " ");
+        const datePattern = "\\b(\\d{2})[\\/.-](\\d{2})[\\/.-](\\d{4})\\b|\\b(\\d{4})-(\\d{2})-(\\d{2})\\b";
+        const labels = [/data\s+de\s+vencimento/i, /vencimento/i, /pagar\s+ate/i, /pague\s+ate/i, /venc\./i];
 
         function toISO(match) {
             const day = Number(match[1] || match[6]);
             const month = Number(match[2] || match[5]);
             const year = Number(match[3] || match[4]);
             const date = new Date(year, month - 1, day);
-
-            if (
-                date.getFullYear() !== year ||
-                date.getMonth() !== month - 1 ||
-                date.getDate() !== day
-            ) return "";
-
+            if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return "";
             return [year, String(month).padStart(2, "0"), String(day).padStart(2, "0")].join("-");
         }
 
@@ -2832,7 +2791,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const flags = label.flags.includes("g") ? label.flags : label.flags + "g";
             for (const match of source.matchAll(new RegExp(label.source, flags))) {
                 const afterLabel = source.slice(match.index + match[0].length, match.index + match[0].length + 90);
-                const nextField = afterLabel.search(/(?:beneficiario|agencia|valor\\s+do\\s+documento|nosso\\s+numero|data\\s+do\\s+documento|pagador)/i);
+                const nextField = afterLabel.search(/(?:beneficiario|agencia|valor\s+do\s+documento|nosso\s+numero|data\s+do\s+documento|pagador)/i);
                 const candidate = nextField >= 0 ? afterLabel.slice(0, nextField) : afterLabel;
                 const dateMatch = candidate.match(new RegExp(datePattern));
                 if (dateMatch) {
@@ -2842,8 +2801,7 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
 
-        // Fallback: lê datas em linhas separadas, comum em PDFs com texto estruturado.
-        const lines = source.split(/\\r?\\n/).map((line) => line.trim()).filter(Boolean);
+        const lines = source.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
         for (let index = 0; index < lines.length; index++) {
             if (!labels.some((label) => label.test(lines[index]))) continue;
             const nearby = [lines[index], lines[index + 1] || "", lines[index - 1] || ""].join(" ");
@@ -2853,101 +2811,65 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (iso) return iso;
             }
         }
-
         return "";
     }
 
     function extractDocumentCNPJ(text) {
-        const source = String(text || "").replace(/\\u00a0/g, " ");
-        const cnpjMatches = [...source.matchAll(/(?:CNPJ\\s*:?\\s*)?(\\d{2}\\.?\\d{3}\\.?\\d{3}\\/?\\d{4}-?\\d{2})/gi)];
-
-        for (const match of cnpjMatches) {
-            const digits = match[1].replace(/\\D/g, "");
+        const source = String(text || "").replace(/\u00a0/g, " ");
+        const matches = [...source.matchAll(/(?:CNPJ\s*:?\s*)?(\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2})/gi)];
+        for (const match of matches) {
+            const digits = match[1].replace(/\D/g, "");
             if (digits.length === 14 && digits !== "00000000000000") {
-                // Prioriza o CNPJ identificado junto ao beneficiário/cedente.
                 const context = source.slice(Math.max(0, match.index - 180), match.index + 40);
                 if (/benefici[aá]rio|cedente|santander/i.test(context)) return digits;
             }
         }
-
-        for (const match of cnpjMatches) {
-            const digits = match[1].replace(/\\D/g, "");
+        for (const match of matches) {
+            const digits = match[1].replace(/\D/g, "");
             if (digits.length === 14 && digits !== "00000000000000") return digits;
         }
-
         return "";
     }
 
     function identifyDocumentProvider(text, fileName) {
-        const source = normalizeDocumentText(`${text}\\n${fileName || ""}`);
-
+        const source = normalizeDocumentText(String(text || "") + "\n" + (fileName || ""));
         const providers = [
-            { pattern: /santander[\\s\\w.,-]{0,90}(?:financ|cred|invest)|santander\\s+financiamentos|soc\\.\\s*cred\\.\\s*financ/i, name: "SANTANDER SOC. CRED. FINANC. E INVEST SA" },
-            { pattern: /\\bcopel\\b/, name: "COPEL" },
-            { pattern: /\\bsanepar\\b/, name: "SANEPAR" },
-            { pattern: /\\bcelesc\\b/, name: "CELESC" },
-            { pattern: /\\bcemig\\b/, name: "CEMIG" },
-            { pattern: /\\benel\\b/, name: "ENEL" },
-            { pattern: /\\bneoenergia\\b/, name: "NEOENERGIA" },
-            { pattern: /\\bcpfl\\b/, name: "CPFL" },
-            { pattern: /\\bequatorial\\b/, name: "EQUATORIAL" },
-            { pattern: /\\benergisa\\b/, name: "ENERGISA" },
-            { pattern: /\\bclaro\\b/, name: "CLARO" },
-            { pattern: /\\bvivo\\b/, name: "VIVO" },
-            { pattern: /\\btim\\b/, name: "TIM" },
-            { pattern: /\\btelefonica\\b/, name: "TELEFÔNICA" },
-            { pattern: /\\boi\\s+(fibra|telecom)\\b/, name: "OI" }
+            { pattern: /santander[\s\w.,-]{0,90}(?:financ|cred|invest)|santander\s+financiamentos|soc\.\s*cred\.\s*financ/i, name: "SANTANDER SOC. CRED. FINANC. E INVEST SA" },
+            { pattern: /\bcopel\b/, name: "COPEL" },
+            { pattern: /\bsanepar\b/, name: "SANEPAR" },
+            { pattern: /\bcelesc\b/, name: "CELESC" },
+            { pattern: /\bcemig\b/, name: "CEMIG" },
+            { pattern: /\benel\b/, name: "ENEL" },
+            { pattern: /\bneoenergia\b/, name: "NEOENERGIA" },
+            { pattern: /\bcpfl\b/, name: "CPFL" },
+            { pattern: /\bequatorial\b/, name: "EQUATORIAL" },
+            { pattern: /\benergisa\b/, name: "ENERGISA" },
+            { pattern: /\bclaro\b/, name: "CLARO" },
+            { pattern: /\bvivo\b/, name: "VIVO" },
+            { pattern: /\btim\b/, name: "TIM" },
+            { pattern: /\btelefonica\b/, name: "TELEFÔNICA" },
+            { pattern: /\boi\s+(fibra|telecom)\b/, name: "OI" }
         ];
-
         return providers.find((provider) => provider.pattern.test(source))?.name || "";
     }
 
     function identifyDocumentDescription(text, fileName) {
         const source = normalizeDocumentText(text);
+        if (/santander\s+financiamentos|soc\.?\s*cred\.?\s*financ|parcela\s*\/\s*plano/.test(source)) return "Parcela de financiamento Santander";
+        if (/energia eletrica|consumo de energia|unidade consumidora/.test(source)) return "Conta de energia elétrica";
+        if (/saneamento|abastecimento de agua|conta de agua|esgoto/.test(source)) return "Conta de água e saneamento";
+        if (/internet|banda larga|fibra optica/.test(source)) return "Internet";
+        if (/telefonia movel|plano movel|servicos de telefonia/.test(source)) return "Telefonia";
+        if (/boleto bancario|ficha de compensacao/.test(source)) return "Pagamento de boleto";
 
-        if (/santander\\s+financiamentos|soc\\.?\\s*cred\\.?\\s*financ|parcela\\s*\\/\\s*plano/.test(source)) {
-            return "Parcela de financiamento Santander";
-        }
-
-        if (/energia eletrica|consumo de energia|unidade consumidora/.test(source)) {
-            return "Conta de energia elétrica";
-        }
-
-        if (/saneamento|abastecimento de agua|conta de agua|esgoto/.test(source)) {
-            return "Conta de água e saneamento";
-        }
-
-        if (/internet|banda larga|fibra optica/.test(source)) {
-            return "Internet";
-        }
-
-        if (/telefonia movel|plano movel|servicos de telefonia/.test(source)) {
-            return "Telefonia";
-        }
-
-        if (/boleto bancario|ficha de compensacao/.test(source)) {
-            return "Pagamento de boleto";
-        }
-
-        const cleanedName = String(fileName || "")
-            .replace(/\\.[^.]+$/, "")
-            .replace(/[_-]+/g, " ")
-            .replace(/\\s+/g, " ")
-            .trim();
-
-        if (cleanedName && cleanedName.length <= 100) {
-            return `Despesa - ${cleanedName}`;
-        }
-
-        return "";
+        const cleanedName = String(fileName || "").replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+        return cleanedName && cleanedName.length <= 100 ? "Despesa - " + cleanedName : "";
     }
 
     function extractExpenseDocumentData(text, fileName) {
-        const provider = identifyDocumentProvider(text, fileName);
-
         return {
             name: identifyDocumentDescription(text, fileName),
-            company: provider,
+            company: identifyDocumentProvider(text, fileName),
             taxId: extractDocumentCNPJ(text),
             totalAmount: extractDocumentAmount(text),
             firstDate: extractDocumentDueDate(text)
