@@ -217,5 +217,5 @@
             }catch(error){alert(error.message||"Não foi possível atualizar o pagamento.");}
         }));
     }
-    window.PRIMEPayroll={render,getCompetencyCost:monthCost,getPaidPaymentsTotal:paidTotal,getPaidPaymentsInMonth:paidInMonth,getPendingPaymentsTotal:()=>data.payments.filter(p=>p.status!=="pago").reduce((s,p)=>s+Number(p.amount||0),0),onBack:null};
+    window.PRIMEPayroll={render,getCompetencyCost:monthCost,getPaidPaymentsTotal:paidTotal,getPaidPaymentsInMonth:paidInMonth,getPendingPaymentsTotal:(monthLimit)=>data.payments.filter(p=>p.status!=="pago"&&(!monthLimit||((p.dueDate&&String(p.dueDate).slice(0,7)<=monthLimit)||(!p.dueDate&&String(p.month||"")<=monthLimit)))).reduce((s,p)=>s+Number(p.amount||0),0),onBack:null};
 })();
