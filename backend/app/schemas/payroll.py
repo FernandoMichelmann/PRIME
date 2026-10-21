@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class PayrollEmployeeBase(BaseModel):
@@ -43,6 +43,12 @@ class PayrollEmployeeBase(BaseModel):
             return None
         value = "".join(character for character in value.strip() if character.isalnum())
         return value or None
+
+    @model_validator(mode="after")
+    def validate_salary_schedule(self):
+        if self.salary_split and (self.salary_day5_amount + self.salary_day20_amount).quantize(Decimal("0.01")) != self.salary.quantize(Decimal("0.01")):
+            raise ValueError("A soma das parcelas do 5º dia útil e do dia 20 deve ser igual à remuneração mensal.")
+        return self
 
 
 class PayrollEmployeeCreate(PayrollEmployeeBase):
