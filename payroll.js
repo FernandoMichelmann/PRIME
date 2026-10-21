@@ -66,7 +66,7 @@
         })), approvedAt:p.approved_at, createdAt:p.created_at, source:"api" };
     }
     function mapRemotePayment(p) {
-        return { id:p.id, month:p.month, employeeId:p.employee_id, type:p.payment_type,
+        return { id:p.id, month:p.month, employeeId:p.employee_id, sourceItemId:p.source_item_id||null, type:p.payment_type,
             amount:Number(p.amount||0), dueDate:p.due_date, status:p.status, paidAt:p.paid_at,
             method:p.method||"", createdAt:p.created_at, source:"api" };
     }
@@ -480,6 +480,12 @@
     window.PRIMEPayroll={
         render,
         getCompetencyCost:monthCost,
+        // Total da folha ainda em aberto no mês, independentemente da data de vencimento.
+        getOutstandingCompetencyCost:(m)=>data.periods.filter(period=>period.month===m).reduce((sum,period)=>sum+(period.items||[]).reduce((itemSum,item)=>{
+            const linkedPayment=data.payments.find(payment=>String(payment.id)===String(item.paymentId||"")||String(payment.sourceItemId||"")===String(item.id));
+            if(linkedPayment&&linkedPayment.status==="pago")return itemSum;
+            return itemSum+Math.max(0,Number(item.amount)||0);
+        },0),0),
         getPaidPaymentsTotal:paidTotal,
         getPaidPaymentsInMonth:paidInMonth,
         getPaidPaymentsThroughDate:(dateLimit)=>data.payments.filter(p=>{const paidDate=String(p.paidAt||p.dueDate||"").slice(0,10);return p.status==="pago"&&Boolean(paidDate)&&paidDate<=dateLimit;}).reduce((s,p)=>s+Number(p.amount||0),0),
