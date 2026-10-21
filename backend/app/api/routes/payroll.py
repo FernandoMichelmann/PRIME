@@ -126,6 +126,55 @@ def update_employee(
     return employee
 
 
+@router.delete("/employees/{employee_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_employee(
+    employee_id: UUID,
+    request: Request,
+    membership=Depends(require_company_permission("payroll.write")),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    employee = db.scalar(
+        select(PayrollEmployee).where(
+            PayrollEmployee.id == employee_id,
+            PayrollEmployee.company_id == membership.company_id,
+        )
+    )
+    if employee is None:
+        raise HTTPException(status_code=404, detail="Funcionário não encontrado.")
+
+    payment = db.scalar(select(PayrollPayment.id).where(
+        PayrollPayment.company_id == membership.company_id,
+        PayrollPayment.employee_id == employee_id,
+    ).limit(1))
+    periods = db.scalars(select(PayrollPeriod).where(
+        PayrollPeriod.company_id == membership.company_id,
+    )).all()
+    has_payroll_history = any(
+        str(item.get("employee_id", "")) == str(employee_id)
+        for period in periods
+        for item in (period.items or [])
+    )
+    if payment is not None or has_payroll_history:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Este funcionário possui histórico de folha ou pagamentos. Para preservar a auditoria, encerre o contrato e mantenha o cadastro.",
+        )
+
+    db.add(AuditLog(
+        company_id=membership.company_id,
+        actor_user_id=user.id,
+        action="payroll.employee.deleted",
+        resource_type="payroll_employee",
+        resource_id=str(employee.id),
+        details={"name": employee.name},
+        ip_address=request.client.host if request.client else None,
+    ))
+    db.delete(employee)
+    db.commit()
+    return None
+
+
 @router.patch("/employees/{employee_id}/status", response_model=PayrollEmployeeResponse)
 def set_employee_status(
     employee_id: UUID,
