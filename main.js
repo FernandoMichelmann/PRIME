@@ -58,6 +58,20 @@ document.addEventListener("DOMContentLoaded", () => {
     const menuToggle = $("#menuToggle");
     const originalContent = content ? [...content.children] : [];
 
+    // Rota prioritária de Receitas: registrada no início para continuar
+    // funcionando mesmo se outro módulo falhar durante a inicialização.
+    document.addEventListener("click", (event) => {
+        const item = event.target.closest('.nav-item[data-page="Receitas"]');
+        if (!item) return;
+
+        event.preventDefault();
+        event.stopImmediatePropagation();
+
+        setActiveNavigation("Receitas");
+        closeSidebar();
+        showRevenuePage();
+    }, true);
+
     // --------------------------------------------------
     // FORMATAÇÃO DE DATAS
     // --------------------------------------------------
