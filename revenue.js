@@ -49,11 +49,39 @@
     let dashboard = null;
     let busy = false;
 
-    async function api(path, options) {
-        if (!window.PRIMEAuth || typeof window.PRIMEAuth.requestCompany !== "function") {
-            throw new Error("Autenticação do PRIME ainda não está disponível. Atualize a página e entre novamente.");
+    const STORAGE_KEY = "primeRevenueDemoV1";
+
+    function readLocalRevenues() {
+        try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            const parsed = saved ? JSON.parse(saved) : [];
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            console.error("[PRIME Receitas] Falha ao ler dados locais:", error);
+            return [];
         }
-        return window.PRIMEAuth.requestCompany(path, options || {});
+    }
+
+    function persistLocalRevenues() {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(revenues));
+            return true;
+        } catch (error) {
+            throw new Error("Não foi possível salvar no navegador. Verifique o espaço disponível.");
+        }
+    }
+
+    function calculateDashboard(rows) {
+        const now = today();
+        const month = now.slice(0, 7);
+        const total = row => Number(row.total_amount) || 0;
+        return {
+            billing_total: rows.filter(row => row.billing_status === "faturada").reduce((sum, row) => sum + total(row), 0),
+            received_total: rows.filter(row => row.payment_status === "recebido" && String(row.payment_date || "").slice(0, 7) === month).reduce((sum, row) => sum + total(row), 0),
+            receivable_balance: rows.filter(row => row.payment_status !== "recebido").reduce((sum, row) => sum + total(row), 0),
+            overdue_balance: rows.filter(row => row.payment_status !== "recebido" && row.due_date && row.due_date < now).reduce((sum, row) => sum + total(row), 0),
+            pending_billing_total: rows.filter(row => row.billing_status !== "faturada").reduce((sum, row) => sum + total(row), 0)
+        };
     }
 
     function render(containerElement) {
@@ -72,13 +100,13 @@
                     <article class="revenue-kpi"><span>PENDENTE DE FATURAMENTO</span><strong data-kpi-pending>—</strong><small>Receitas cadastradas ainda não faturadas</small></article>
                 </section>
                 <section class="revenue-panel">
-                    <div class="revenue-panel-heading"><div><h2>Receitas cadastradas</h2><p>Consulte lançamentos reais vinculados à empresa autenticada.</p></div><div class="revenue-heading-actions"><button type="button" class="revenue-btn secondary" data-revenue-export>Exportar CSV</button><button type="button" class="revenue-btn secondary" data-revenue-refresh>Atualizar</button></div></div>
+                    <div class="revenue-panel-heading"><div><h2>Receitas cadastradas</h2><p>Consulte e gerencie lançamentos demonstrativos salvos neste navegador.</p></div><div class="revenue-heading-actions"><button type="button" class="revenue-btn secondary" data-revenue-export>Exportar CSV</button><button type="button" class="revenue-btn secondary" data-revenue-refresh>Atualizar</button></div></div>
                     <div class="revenue-toolbar"><input type="search" placeholder="Buscar referência, cliente, CT-e ou fatura..." aria-label="Buscar receitas" data-revenue-search><select aria-label="Situação do faturamento" data-revenue-status><option value="">Todas as situações</option><option value="pendente">Pendente de faturamento</option><option value="faturada">Faturada</option></select><button type="button" class="revenue-btn secondary" data-revenue-clear>Limpar</button></div>
-                    <div data-revenue-table><div class="revenue-empty">Carregando dados do backend...</div></div>
+                    <div data-revenue-table><div class="revenue-empty">Carregando receitas...</div></div>
                 </section>
                 <div class="revenue-dialog" data-revenue-dialog hidden>
                     <section class="revenue-dialog-card" role="dialog" aria-modal="true" aria-labelledby="revenueDialogTitle">
-                        <h2 id="revenueDialogTitle">Nova receita</h2><p>Os valores serão calculados e salvos no backend do PRIME.</p>
+                        <h2 id="revenueDialogTitle">Nova receita</h2><p>Modo de demonstração: os dados ficam salvos somente neste navegador.</p>
                         <form class="revenue-form" data-revenue-form>
                             <label>Referência interna *<input name="reference" required maxlength="40" placeholder="REC-2026-0001"></label>
                             <label>Cliente contratante *<input name="customer_name" required maxlength="180"></label>
@@ -152,20 +180,15 @@
 
     async function load() {
         const table = container.querySelector("[data-revenue-table]");
-        table.innerHTML = '<div class="revenue-empty">Carregando dados do backend...</div>';
-        try {
-            const [rows, dash] = await Promise.all([api("/revenue?limit=500"), api("/revenue/dashboard")]);
-            revenues = Array.isArray(rows) ? rows : [];
-            dashboard = dash || {};
-            container.querySelector("[data-kpi-billing]").textContent = money(dashboard.billing_total);
-            container.querySelector("[data-kpi-received]").textContent = money(dashboard.received_total);
-            container.querySelector("[data-kpi-balance]").textContent = money(dashboard.receivable_balance);
-            container.querySelector("[data-kpi-overdue]").textContent = money(dashboard.overdue_balance);
-            container.querySelector("[data-kpi-pending]").textContent = money(dashboard.pending_billing_total);
-            filterTable();
-        } catch (error) {
-            table.innerHTML = '<div class="revenue-message error">' + esc(error.message || "Não foi possível carregar as receitas.") + '<br>Verifique se a API está ativa e se seu usuário tem permissão financeira.</div>';
-        }
+        table.innerHTML = '<div class="revenue-empty">Carregando receitas...</div>';
+        revenues = readLocalRevenues();
+        dashboard = calculateDashboard(revenues);
+        container.querySelector("[data-kpi-billing]").textContent = money(dashboard.billing_total);
+        container.querySelector("[data-kpi-received]").textContent = money(dashboard.received_total);
+        container.querySelector("[data-kpi-balance]").textContent = money(dashboard.receivable_balance);
+        container.querySelector("[data-kpi-overdue]").textContent = money(dashboard.overdue_balance);
+        container.querySelector("[data-kpi-pending]").textContent = money(dashboard.pending_billing_total);
+        filterTable();
     }
 
     function filterTable() {
@@ -198,7 +221,35 @@
         if (data.weight_kg !== null) data.weight_kg = String(data.weight_kg);
         busy = true; submit.disabled = true; submit.textContent = "Salvando...";
         try {
-            await api("/revenue", { method: "POST", body: JSON.stringify(data) });
+            const reference = String(data.reference || "").trim().toLocaleLowerCase("pt-BR");
+            if (revenues.some(row => String(row.reference || "").trim().toLocaleLowerCase("pt-BR") === reference)) {
+                throw new Error("Já existe uma receita com essa referência.");
+            }
+            const base = Number(data.base_amount) || 0;
+            const additions = Number(data.additions_amount) || 0;
+            const toll = Number(data.toll_amount) || 0;
+            const discount = Number(data.discount_amount) || 0;
+            const total = Math.round((base + additions + toll - discount) * 100) / 100;
+            if (base <= 0 || total <= 0 || discount > base + additions + toll) {
+                throw new Error("Confira os valores: o total da receita deve ser maior que zero.");
+            }
+            const record = {
+                ...data,
+                reference: String(data.reference || "").trim(),
+                customer_name: String(data.customer_name || "").trim(),
+                description: String(data.description || "").trim(),
+                billing_status: "pendente",
+                payment_status: "pendente",
+                total_amount: total,
+                created_at: new Date().toISOString()
+            };
+            revenues.unshift(record);
+            try {
+                persistLocalRevenues();
+            } catch (error) {
+                revenues.shift();
+                throw error;
+            }
             closeForm();
             await load();
         } catch (error) {
