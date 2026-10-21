@@ -432,4 +432,7 @@
         getPendingPaymentsTotal:(monthLimit)=>data.payments.filter(p=>p.status!=="pago"&&(!monthLimit||((p.dueDate&&String(p.dueDate).slice(0,7)<=monthLimit)||(!p.dueDate&&String(p.month||"")<=monthLimit)))).reduce((s,p)=>s+Number(p.amount||0),0),
         onBack:null
     };
+    window.addEventListener("prime:auth-ready",()=>{
+        syncAll().then(()=>ensureAutomaticPayroll()).then(()=>window.dispatchEvent(new CustomEvent("prime:payroll-updated")));
+    });
 })();
