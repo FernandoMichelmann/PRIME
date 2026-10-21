@@ -67,6 +67,7 @@ class PayrollPeriodResponse(BaseModel):
 
 
 class PayrollPaymentCreate(BaseModel):
+    source_item_id: str | None = Field(default=None, max_length=80)
     employee_id: UUID
     month: str
     payment_type: str = Field(default="outro", min_length=1, max_length=40)
@@ -125,6 +126,7 @@ class PayrollPaymentUpdate(BaseModel):
 class PayrollPaymentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
+    source_item_id: str | None
     company_id: UUID
     employee_id: UUID
     month: str
