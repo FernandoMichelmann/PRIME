@@ -172,7 +172,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 date.setMonth(date.getMonth() + i);
                 const due = localISO(date);
                 return {...cost, vehicleId:vehicle.id, vehiclePlate:vehicle.plate, occurrenceDate:due, occurrenceAmount:amount/count, installmentNumber:i+1};
-            }).filter((item) => monthKey(item.occurrenceDate) === month);
+            }).filter((item) => month == null || monthKey(item.occurrenceDate) === month);
         }));
     }
 
@@ -248,14 +248,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function getMonthlyUnpaidExpenseTotal(month = currentMonth()) {
+        // A pagar inclui pendências de meses anteriores: só saem quando forem quitadas.
         const unpaidInstallments = getInstallments()
-            .filter((item) => !item.paid && monthKey(item.date) === month)
+            .filter((item) => !item.paid)
             .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-        const unpaidVehicleCosts = getVehicleCostOccurrences(month)
+        const unpaidVehicleCosts = getVehicleCostOccurrences(null)
             .filter((item) => item.paymentMethod === "card")
             .reduce((sum, item) => sum + (Number(item.occurrenceAmount) || 0), 0);
         const payrollOutstanding = window.PRIMEPayroll && typeof window.PRIMEPayroll.getOutstandingCompetencyCost === "function"
-            ? window.PRIMEPayroll.getOutstandingCompetencyCost(month)
+            ? window.PRIMEPayroll.getOutstandingCompetencyCost(null)
             : 0;
         return unpaidInstallments + unpaidVehicleCosts + payrollOutstanding;
     }
