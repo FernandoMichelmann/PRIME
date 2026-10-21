@@ -440,9 +440,9 @@ document.addEventListener("DOMContentLoaded", () => {
             resultStatus.innerHTML = `
                 <span class="status-neutral">
                     <i data-lucide="minus"></i>
-                    ${revenue !== 0 || expense !== 0 ? "Resultado do mês" : "Sem registros"}
+                    ${revenue !== 0 || expense !== 0 ? "Projeção de caixa" : "Aguardando lançamentos"}
                 </span>
-                <span class="muted">Mês atual</span>
+                <span class="muted">Previsão até o fim do mês</span>
             `;
         }
 
