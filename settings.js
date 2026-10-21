@@ -22,7 +22,7 @@
     const copy = value => JSON.parse(JSON.stringify(value));
     let state = load();
     let originalContent = null;
-    let activeSection = "company";
+    let activeSection = "appearance";
 
     function load() {
         try {
@@ -178,7 +178,7 @@
           </header>
           <div class="settings-layout">
             <nav class="settings-nav" aria-label="${t("title")}">
-              ${[["company","company"],["preferences","preferences"],["appearance","appearance"],["finance","finance"],["users","users"],["alerts","alerts"],["data","data"],["integrations","integrations"],["about","about"]].map(([id,key])=>`<button type="button" data-settings-tab="${id}" class="${activeSection===id?"active":""}">${t(key)}</button>`).join("")}
+              ${[["preferences","preferences"],["appearance","appearance"],["finance","finance"],["alerts","alerts"],["data","data"],["integrations","integrations"],["about","about"]].map(([id,key])=>`<button type="button" data-settings-tab="${id}" class="${activeSection===id?"active":""}">${t(key)}</button>`).join("")}
             </nav>
             <div class="settings-panel" id="settingsPanel">${sectionMarkup()}</div>
           </div>
