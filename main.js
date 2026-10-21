@@ -234,7 +234,10 @@ document.addEventListener("DOMContentLoaded", () => {
     function getMonthlyExpenseTotal(month = currentMonth()) {
         const ordinaryExpenses = getMonthTransactions(month).filter((item) => item.type === "expense").reduce((sum, item) => sum + item.amount, 0);
         const registeredExpenses = getInstallments().filter((item) => monthKey(item.date) === month).reduce((sum, item) => sum + item.amount, 0);
-        const payrollCost = window.PRIMEPayroll ? window.PRIMEPayroll.getCompetencyCost(month) : 0;
+        // Folha só entra em Despesas depois que o pagamento for marcado como pago.
+        const payrollCost = window.PRIMEPayroll && typeof window.PRIMEPayroll.getPaidPaymentsInMonth === "function"
+            ? window.PRIMEPayroll.getPaidPaymentsInMonth(month)
+            : 0;
         return ordinaryExpenses + registeredExpenses + getFinalizedTripTotals(month).expense + getMonthlyVehicleMaintenanceTotal(month) + payrollCost;
     }
 
@@ -360,7 +363,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 .filter((item) => monthKey(item.date) === currentMonth())
                 .map((item) => ({ amount: item.amount, category: item.category || "Outros" })),
             ...getVehicleCostOccurrences(currentMonth()).map((item) => ({ amount: item.occurrenceAmount, category: "Manutenção" })),
-            ...(window.PRIMEPayroll && window.PRIMEPayroll.getCompetencyCost(currentMonth()) > 0 ? [{ amount: window.PRIMEPayroll.getCompetencyCost(currentMonth()), category: "Pessoal" }] : [])
+            ...(window.PRIMEPayroll && typeof window.PRIMEPayroll.getPaidPaymentsInMonth === "function" && window.PRIMEPayroll.getPaidPaymentsInMonth(currentMonth()) > 0 ? [{ amount: window.PRIMEPayroll.getPaidPaymentsInMonth(currentMonth()), category: "Pessoal" }] : [])
         ];
 
         currentExpenses.forEach((expense) => {
@@ -413,7 +416,7 @@ document.addEventListener("DOMContentLoaded", () => {
             getInstallments().filter((item) => monthKey(item.date) === currentMonth()).length +
             vehicleTrips.filter((trip) => trip.finalizedAt && monthKey(trip.tripDate) === currentMonth()).length +
             getVehicleCostOccurrences(currentMonth()).length +
-            (window.PRIMEPayroll && window.PRIMEPayroll.getCompetencyCost(currentMonth()) > 0 ? 1 : 0);
+            (window.PRIMEPayroll && typeof window.PRIMEPayroll.getPaidPaymentsInMonth === "function" && window.PRIMEPayroll.getPaidPaymentsInMonth(currentMonth()) > 0 ? 1 : 0);
 
         const balanceStatus = $(".kpi-card:nth-child(1) .kpi-bottom");
         const receivableStatus = $(".kpi-card:nth-child(2) .kpi-bottom");
