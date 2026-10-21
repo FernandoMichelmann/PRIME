@@ -116,12 +116,12 @@
         const match=String(employee.integralPaymentDay||"").match(/(?:dia\s*)?(\d{1,2})/i);
         return match?isoDate(new Date(y,m,Math.min(Number(match[1]),new Date(y,m+1,0).getDate()))):isoDate(new Date(y,m,20));
     }
-    async function ensureAutomaticPayroll(){
+    async function generatePayroll(){
         if(apiEmployeeState!=="connected"||apiRecordsState!=="connected"||!window.PRIMEAuth)return;
         let current=period();
         if(!current){
             try{await window.PRIMEAuth.requestCompany("/payroll/periods",{method:"POST",body:JSON.stringify({month,status:"preparação",items:[]})});await syncRemoteRecords();current=period();}
-            catch(error){apiRecordsError=error?.message||"Não foi possível criar a competência automática.";return;}
+            catch(error){apiRecordsError=error?.message||"Não foi possível criar a competência da folha.";return;}
         }
         if(!current||current.status!=="preparação")return;
         const [y,mm]=month.split("-").map(Number),start=month+"-01",end=isoDate(new Date(y,mm,0)),newItems=[];
@@ -137,7 +137,7 @@
         if(newItems.length){
             const items=[...(current.items||[]).map(i=>({id:i.id,employee_id:i.employeeId,description:i.description,kind:i.kind,amount:i.amount,created_at:i.createdAt||null,due_date:i.dueDate||null,source:i.source||"manual",approved:Boolean(i.approved),payment_id:i.paymentId||null,extra_category:i.extraCategory||null})),...newItems];
             try{await window.PRIMEAuth.requestCompany("/payroll/periods/"+encodeURIComponent(current.id),{method:"PATCH",body:JSON.stringify({items})});await syncRemoteRecords();}
-            catch(error){apiRecordsError=error?.message||"Não foi possível gerar as parcelas automáticas.";}
+            catch(error){apiRecordsError=error?.message||"Não foi possível gerar as parcelas da folha.";}
         }
     }
     const style = document.createElement("style");
@@ -158,7 +158,7 @@
         @media(max-width:520px){.payroll-modal-card{padding:22px 18px}.payroll-modal-card .payroll-form-actions>*{flex:1}}
     `;
     if(!document.querySelector("[data-payroll-modal-styles]")){style.setAttribute("data-payroll-modal-styles","");document.head.appendChild(style);}
-    function render(target){ host=target; if(host) { draw(); syncAll().then(()=>ensureAutomaticPayroll()).then(()=>{ if(host) draw(); }); } }
+    function render(target){ host=target; if(host) { draw(); syncAll().then(()=>{ if(host) draw(); }); } }
     function draw(){
         if(!host)return;
         const p=period(), employees=active(), pending=data.payments.filter(x=>x.status!=="pago").reduce((s,x)=>s+Number(x.amount||0),0);
@@ -169,8 +169,9 @@
         (tab==="resumo"?summary(employees,p,pending):"")+(tab==="funcionarios"?employeeView():"")+(tab==="folha"?periodView(p):"")+(tab==="pagamentos"?paymentView():"");
         host.querySelector("[data-p-back]")?.addEventListener("click",()=>window.PRIMEPayroll.onBack?.());
         host.querySelectorAll("[data-p-tab]").forEach(b=>b.addEventListener("click",()=>{tab=b.dataset.pTab;draw();}));
-        host.querySelectorAll("[data-p-month]").forEach(i=>i.addEventListener("change",async()=>{if(/^\d{4}-\d{2}$/.test(i.value))month=i.value;await syncAll();await ensureAutomaticPayroll();draw();}));
+        host.querySelectorAll("[data-p-month]").forEach(i=>i.addEventListener("change",async()=>{if(/^\d{4}-\d{2}$/.test(i.value))month=i.value;await syncAll();draw();}));
         bindForms();
+        host.querySelectorAll("[data-p-generate]").forEach(button=>button.addEventListener("click",()=>handleGeneratePayroll(button)));
         if(window.lucide)window.lucide.createIcons();
     }
     function summary(emps,p,pending){
@@ -214,7 +215,7 @@
         (allEmployees().length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Nome</th><th>Vínculo</th><th>Função/setor</th><th>Remuneração</th><th>Pagamento</th><th>Situação</th><th>Ações</th></tr></thead><tbody>'+allEmployees().map(e=>'<tr><td><strong>'+esc(e.name)+'</strong><small>'+esc(e.taxId||"Documento não informado")+'</small><small>'+esc(e.phone||"Telefone não informado")+'</small></td><td>'+esc(e.type)+'</td><td>'+esc(e.role||"—")+'<small>'+esc(e.department||"—")+'</small></td><td>'+money(e.salary)+'</td><td>'+esc(e.salarySplit?("5º útil: "+money(e.salaryDay5Amount)+" / Dia 20: "+money(e.salaryDay20Amount)):(e.integralPaymentDay==="5o_dia_util"?"5º dia útil":e.integralPaymentDay==="dia_20"?"Dia 20":e.integralPaymentDay==="ultimo_dia_util"?"Último dia útil":e.integralPaymentDay==="dia_30"?"Dia 30":e.integralPaymentDay||"Não definido"))+'</td><td>'+esc(e.status)+'</td><td style="min-width:190px;white-space:normal"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button type="button" class="button-secondary payroll-small-button" data-p-employee-edit="'+esc(e.id)+'">Editar</button><button type="button" class="button-secondary payroll-small-button" data-p-employee-delete="'+esc(e.id)+'">Excluir</button></div></td></tr>').join('')+'</tbody></table></div>':'<div class="payroll-empty">Nenhum colaborador cadastrado.</div>')+'</div>';
     }
     function periodView(p){
-        if(!p)return '<div class="payroll-toolbar"><label>Competência <input type="month" data-p-month value="'+esc(month)+'"></label></div><div class="payroll-panel"><h2>Preparando folha automática</h2><p class="payroll-muted">A competência será criada com as parcelas salariais dos funcionários ativos.</p></div>';
+        if(!p)return '<div class="payroll-toolbar"><label>Competência <input type="month" data-p-month value="'+esc(month)+'"></label></div><div class="payroll-panel"><h2>Folha mensal ainda não gerada</h2><p class="payroll-muted">O PRIME não calculará nem criará rubricas automaticamente. Confira os cadastros e clique abaixo quando quiser gerar a folha desta competência.</p><button type="button" class="button-primary" data-p-generate><i data-lucide="calculator"></i> Gerar folha de pagamento</button></div>';
         const currentDay=Number(today().slice(8,10)),cycle=currentDay<10?"5o_dia_util":"dia_20";
         const dueItems=(p.items||[]).filter(i=>{
             if(i.source==="salary_auto")return cycle==="5o_dia_util"?i.description==="Salário — 5º dia útil"||i.description==="Salário integral"&&String(i.dueDate||"").slice(8,10)<="10":i.description==="Salário — dia 20"||i.description==="Salário integral"&&String(i.dueDate||"").slice(8,10)>="10";
@@ -227,7 +228,7 @@
             groups.get(key).push(i);
         });
         const rows=[...groups.values()].map(items=>({items,employee:employeeById(items[0].employeeId),date:items[0].dueDate||month+"-20",total:items.reduce((sum,i)=>sum+(i.kind==="desconto"?-1:1)*Math.max(0,Number(i.amount)||0),0),sent:items.every(i=>Boolean(i.paymentId)||Boolean(i.approved)),pending:items.filter(i=>!i.paymentId&&!i.approved)}));
-        return '<div class="payroll-toolbar"><label>Competência <input type="month" data-p-month value="'+esc(month)+'"></label><span class="payroll-status">Data do período: '+formatFullDate(cycle==="5o_dia_util"?fifthBusinessDay(Number(month.slice(0,4)),Number(month.slice(5,7))-1):month+"-20")+' · Ciclo: '+(currentDay<10?"5º dia útil":"Dia 20")+'</span><span class="payroll-status">Status: '+esc(p.status)+'</span></div><div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>Folha — '+esc(formatFullDate(cycle==="5o_dia_util"?fifthBusinessDay(Number(month.slice(0,4)),Number(month.slice(5,7))-1):month+"-20"))+'</h2><p>Total previsto para o período, incluindo custos ainda não aprovados.</p></div><strong class="payroll-period-total">'+money(rows.reduce((sum,row)=>sum+row.total,0))+'</strong></div>'+
+        return '<div class="payroll-toolbar"><label>Competência <input type="month" data-p-month value="'+esc(month)+'"></label><span class="payroll-status">Data do período: '+formatFullDate(cycle==="5o_dia_util"?fifthBusinessDay(Number(month.slice(0,4)),Number(month.slice(5,7))-1):month+"-20")+' · Ciclo: '+(currentDay<10?"5º dia útil":"Dia 20")+'</span><span class="payroll-status">Status: '+esc(p.status)+'</span></div><div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>Folha — '+esc(formatFullDate(cycle==="5o_dia_util"?fifthBusinessDay(Number(month.slice(0,4)),Number(month.slice(5,7))-1):month+"-20"))+'</h2><p>Total previsto para o período, incluindo custos ainda não aprovados.</p></div><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><strong class="payroll-period-total">'+money(rows.reduce((sum,row)=>sum+row.total,0))+'</strong><button type="button" class="button-primary" data-p-generate><i data-lucide="calculator"></i> Gerar folha de pagamento</button></div></div>'+
         (rows.length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Funcionário</th><th>Rubricas</th><th>Vencimento</th><th>Valor total</th><th>Situação</th><th>Ações</th></tr></thead><tbody>'+rows.map(row=>{
             const {items,employee,date,total,sent,pending}=row;
             const base=items.find(i=>i.source==="salary_auto")||items[0];
@@ -247,6 +248,37 @@
         return '<div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>Registrar pagamento</h2><p>Adiantamento, saldo salarial ou outro pagamento. Só marque como pago após a saída efetiva do dinheiro.</p></div></div><form class="payroll-form" id="p-payment"><label>Competência<input type="month" name="month" required value="'+esc(month)+'"></label><label>Funcionário<select name="employeeId" required>'+active().map(e=>'<option value="'+esc(e.id)+'">'+esc(e.name)+'</option>').join('')+'</select></label><label>Tipo<select name="type"><option value="adiantamento">Adiantamento (dia 20)</option><option value="saldo">Saldo salarial (5º dia útil)</option><option value="outro">Outro</option></select></label><label>Valor (R$)<input name="amount" type="number" min="0.01" step="0.01" required></label><label>Vencimento<input name="dueDate" type="date" required></label><label>Situação<select name="status"><option value="pendente">Pendente</option><option value="pago">Pago</option></select></label><label>Data efetiva<input name="paidAt" type="date" value="'+today()+'"></label><label>Método<input name="method" maxlength="60" placeholder="PIX, transferência..."></label><div class="payroll-form-actions"><button class="button-primary" type="submit" '+(active().length?'':'disabled')+'>Registrar pagamento</button></div></form></div>'+
         '<div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>Histórico de pagamentos</h2><p>'+data.payments.length+' registro(s). Pagamentos não são apagados ao reprocessar folhas.</p></div></div>'+
         (data.payments.length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Competência</th><th>Funcionário</th><th>Tipo</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead><tbody>'+[...data.payments].sort((a,b)=>(b.dueDate||"").localeCompare(a.dueDate||"")).map(p=>'<tr><td>'+esc(p.month)+'</td><td>'+esc(employeeById(p.employeeId)?.name||"Colaborador")+'</td><td>'+esc(p.type)+'</td><td>'+esc(p.dueDate)+'</td><td>'+money(p.amount)+'</td><td>'+esc(p.status)+'</td><td style="min-width:220px;white-space:normal"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +(p.status!=="pago"?'<button type="button" class="button-secondary payroll-small-button" data-p-paid="'+esc(p.id)+'">Pagar</button>':'<button type="button" class="button-secondary payroll-small-button" data-p-reverse="'+esc(p.id)+'">Estornar</button>')+'<button type="button" class="button-secondary payroll-small-button" data-p-edit="'+esc(p.id)+'">Editar</button><button type="button" class="button-secondary payroll-small-button" data-p-delete="'+esc(p.id)+'">Excluir</button></div></td></tr>').join('')+'</tbody></table></div>':'<div class="payroll-empty">Nenhum pagamento registrado.</div>')+'</div>';
+    }
+    async function handleGeneratePayroll(button){
+        if(!window.PRIMEAuth){alert("Entre na conta da transportadora antes de gerar a folha.");return;}
+        if(apiEmployeeState!=="connected"||apiRecordsState!=="connected"){
+            alert("Aguarde a conexão com o backend e tente novamente.");
+            return;
+        }
+        const current=period();
+        if(current && current.status!=="preparação"){
+            alert("Esta competência não está em preparação. Não é possível gerar ou alterar a folha aprovada.");
+            return;
+        }
+        const employeeCount=active().length;
+        if(!employeeCount){alert("Cadastre ao menos um funcionário ativo antes de gerar a folha.");return;}
+        if(!confirm("Gerar a folha de pagamento da competência "+month+" com base nos salários cadastrados dos funcionários ativos? A ação não envia pagamentos; isso será feito separadamente."))return;
+        button.disabled=true;button.textContent="Calculando folha...";
+        try{
+            await generatePayroll();
+            await syncAll();
+            draw();
+            const updated=period();
+            if(updated && updated.items.length){
+                alert("Folha de pagamento gerada para "+month+". Confira os valores e rubricas antes de aprovar e enviar para pagamento.");
+            }else{
+                alert("A folha não gerou rubricas. Confira os salários cadastrados e a situação dos funcionários.");
+            }
+        }catch(error){
+            alert(error?.message||"Não foi possível gerar a folha de pagamento.");
+        }finally{
+            if(button.isConnected)button.disabled=false;
+        }
     }
     function bindForms(){
         const employeeForm=$("#p-employee",host);
