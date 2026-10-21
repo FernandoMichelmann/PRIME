@@ -24,6 +24,7 @@
         .revenue-table th{font-size:10px;text-transform:uppercase;letter-spacing:.45px;color:var(--muted,#94A3B8)}.revenue-table td{font-size:12px}
         .revenue-table td strong,.revenue-table td small{display:block}.revenue-table td small{color:var(--muted,#94A3B8);font-size:10px;margin-top:4px}
         .revenue-state{display:inline-flex;padding:5px 8px;border-radius:5px;background:#172A42;color:#A8D1FF;font-size:10px;font-weight:700}
+        .revenue-state.paid{background:#12352D;color:#86EFAC}.revenue-actions{display:flex;gap:6px;align-items:center}.revenue-actions .revenue-btn{padding:7px 9px;font-size:11px}.revenue-btn.danger{background:#351A24;border-color:#713044;color:#FCA5A5}.revenue-btn.danger:hover{background:#51202F}.revenue-btn.paid-button{background:#12352D;border-color:#21634F;color:#86EFAC}
         .revenue-empty,.revenue-message{padding:24px;text-align:center;color:var(--muted,#94A3B8);line-height:1.7}.revenue-message.error{color:#FCA5A5}
         .revenue-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}.revenue-form label{display:flex;flex-direction:column;gap:7px;color:var(--muted,#94A3B8);font-size:11px;font-weight:600;min-width:0}
         .revenue-form input,.revenue-form select,.revenue-form textarea{width:100%;min-width:0}.revenue-form .wide{grid-column:1/-1}.revenue-form textarea{min-height:78px;resize:vertical}
@@ -48,6 +49,7 @@
     let revenues = [];
     let dashboard = null;
     let busy = false;
+    let editingReference = null;
 
     const STORAGE_KEY = "primeRevenueDemoV1";
 
@@ -136,6 +138,7 @@
             filterTable();
         });
         container.querySelector("[data-revenue-form]").addEventListener("submit", save);
+        container.querySelector("[data-revenue-table]").addEventListener("click", handleRevenueAction);
         load();
     }
 
@@ -170,13 +173,50 @@
         URL.revokeObjectURL(url);
     }
 
-    function openForm() {
-        container.querySelector("[data-revenue-form]").reset();
+    function openForm(record = null) {
+        const form = container.querySelector("[data-revenue-form]");
+        form.reset();
+        editingReference = record ? record.reference : null;
+        container.querySelector("#revenueDialogTitle").textContent = record ? "Editar receita" : "Nova receita";
+        form.querySelector('[type="submit"]').textContent = record ? "Salvar alterações" : "Salvar receita";
+        const message = container.querySelector("[data-revenue-form-message]");
+        message.textContent = "";
+        message.classList.remove("error");
+        if (record) Object.entries(record).forEach(([key, value]) => {
+            const field = form.elements.namedItem(key);
+            if (field && value !== null && value !== undefined) field.value = value;
+        });
         container.querySelector("[data-revenue-dialog]").hidden = false;
-        container.querySelector("[data-revenue-form-message]").textContent = "";
-        container.querySelector('[name="reference"]').focus();
+        form.querySelector('[name="reference"]').focus();
     }
-    function closeForm() { container.querySelector("[data-revenue-dialog]").hidden = true; }
+    function closeForm() {
+        container.querySelector("[data-revenue-dialog]").hidden = true;
+        editingReference = null;
+    }
+
+    function handleRevenueAction(event) {
+        const button = event.target.closest("[data-revenue-action]");
+        if (!button || busy) return;
+        const reference = button.dataset.reference;
+        const record = revenues.find(row => row.reference === reference);
+        if (!record) return;
+        if (button.dataset.revenueAction === "edit") {
+            openForm(record);
+        } else if (button.dataset.revenueAction === "delete") {
+            if (!window.confirm("Excluir a receita " + record.reference + " de " + record.customer_name + "? Esta ação não pode ser desfeita.")) return;
+            const previous = revenues;
+            revenues = revenues.filter(row => row.reference !== reference);
+            try { persistLocalRevenues(); load(); }
+            catch (error) { revenues = previous; window.alert(error.message || "Não foi possível excluir a receita."); }
+        } else if (button.dataset.revenueAction === "receive") {
+            if (record.payment_status === "recebido") return;
+            if (!window.confirm("Confirmar que o cliente " + record.customer_name + " pagou " + money(record.total_amount) + "? O valor será registrado como recebido no saldo financeiro.")) return;
+            const previous = revenues;
+            revenues = revenues.map(row => row.reference === reference ? { ...row, payment_status: "recebido", payment_date: today(), received_amount: Number(row.total_amount) || 0 } : row);
+            try { persistLocalRevenues(); load(); }
+            catch (error) { revenues = previous; window.alert(error.message || "Não foi possível registrar o recebimento."); }
+        }
+    }
 
     async function load() {
         const table = container.querySelector("[data-revenue-table]");
@@ -204,8 +244,8 @@
             table.innerHTML = '<div class="revenue-empty">Nenhuma receita encontrada. Cadastre a primeira receita ou ajuste os filtros.</div>';
             return;
         }
-        table.innerHTML = '<div class="revenue-table-wrap"><table class="revenue-table"><thead><tr><th>Referência / cliente</th><th>Serviço</th><th>Data do serviço</th><th>Faturamento</th><th class="align-right">Valor total</th></tr></thead><tbody>' +
-            rows.map(row => '<tr><td><strong>' + esc(row.reference) + '</strong><small>' + esc(row.customer_name) + '</small></td><td>' + esc(row.description) + '<small>' + esc(row.cte_number ? "CT-e " + row.cte_number : row.operation_reference || "Sem operação vinculada") + '</small></td><td>' + dateLabel(row.service_date) + '</td><td><span class="revenue-state">' + (row.billing_status === "faturada" ? "Faturada" : "Pendente") + '</span></td><td class="align-right"><strong>' + money(row.total_amount) + '</strong></td></tr>').join("") +
+        table.innerHTML = '<div class="revenue-table-wrap"><table class="revenue-table"><thead><tr><th>Referência / cliente</th><th>Serviço</th><th>Data do serviço</th><th>Faturamento</th><th>Pagamento</th><th class="align-right">Valor total</th><th>Ações</th></tr></thead><tbody>' +
+            rows.map(row => { const paid = row.payment_status === "recebido"; const ref = esc(row.reference); return '<tr><td><strong>' + ref + '</strong><small>' + esc(row.customer_name) + '</small></td><td>' + esc(row.description) + '<small>' + esc(row.cte_number ? "CT-e " + row.cte_number : row.operation_reference || "Sem operação vinculada") + '</small></td><td>' + dateLabel(row.service_date) + '</td><td><span class="revenue-state">' + (row.billing_status === "faturada" ? "Faturada" : "Pendente") + '</span></td><td><span class="revenue-state ' + (paid ? "paid" : "") + '">' + (paid ? "Recebido em " + dateLabel(row.payment_date) : "A receber") + '</span></td><td class="align-right"><strong>' + money(row.total_amount) + '</strong></td><td><div class="revenue-actions"><button type="button" class="revenue-btn secondary" data-revenue-action="edit" data-reference="' + ref + '">Editar</button><button type="button" class="revenue-btn danger" data-revenue-action="delete" data-reference="' + ref + '">Excluir</button><button type="button" class="revenue-btn ' + (paid ? "paid-button" : "") + '" data-revenue-action="receive" data-reference="' + ref + '" ' + (paid ? "disabled" : "") + '>' + (paid ? "Baixado" : "Baixar") + '</button></div></td></tr>'; }).join("") +
             '</tbody></table></div>';
     }
 
@@ -222,7 +262,7 @@
         busy = true; submit.disabled = true; submit.textContent = "Salvando...";
         try {
             const reference = String(data.reference || "").trim().toLocaleLowerCase("pt-BR");
-            if (revenues.some(row => String(row.reference || "").trim().toLocaleLowerCase("pt-BR") === reference)) {
+            if (revenues.some(row => row.reference !== editingReference && String(row.reference || "").trim().toLocaleLowerCase("pt-BR") === reference)) {
                 throw new Error("Já existe uma receita com essa referência.");
             }
             const base = Number(data.base_amount) || 0;
@@ -233,23 +273,25 @@
             if (base <= 0 || total <= 0 || discount > base + additions + toll) {
                 throw new Error("Confira os valores: o total da receita deve ser maior que zero.");
             }
+            const existing = editingReference ? revenues.find(row => row.reference === editingReference) : null;
             const record = {
-                ...data,
+                ...(existing || {}), ...data,
                 reference: String(data.reference || "").trim(),
                 customer_name: String(data.customer_name || "").trim(),
                 description: String(data.description || "").trim(),
-                billing_status: "pendente",
-                payment_status: "pendente",
+                billing_status: existing ? existing.billing_status : "pendente",
+                payment_status: existing ? existing.payment_status : "pendente",
+                payment_date: existing ? existing.payment_date : null,
+                received_amount: existing ? existing.received_amount : 0,
                 total_amount: total,
-                created_at: new Date().toISOString()
+                created_at: existing ? existing.created_at : new Date().toISOString(),
+                updated_at: existing ? new Date().toISOString() : null
             };
-            revenues.unshift(record);
-            try {
-                persistLocalRevenues();
-            } catch (error) {
-                revenues.shift();
-                throw error;
-            }
+            const previous = revenues;
+            if (existing) revenues = revenues.map(row => row.reference === editingReference ? record : row);
+            else revenues.unshift(record);
+            try { persistLocalRevenues(); }
+            catch (error) { revenues = previous; throw error; }
             closeForm();
             await load();
         } catch (error) {
