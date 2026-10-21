@@ -463,7 +463,7 @@
                 const paidAt=String(new FormData(form).get("paidAt")||"").trim();
                 const date=new Date(paidAt+"T12:00:00");
                 const error=modal.querySelector("[data-p-modal-error]");
-                if(!/^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$/.test(paidAt)||Number.isNaN(date.getTime())||date.toISOString().slice(0,10)!==paidAt){
+                if(!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(paidAt)||Number.isNaN(date.getTime())||date.toISOString().slice(0,10)!==paidAt){
                     error.textContent="Selecione uma data válida.";error.hidden=false;return;
                 }
                 const submit=form.querySelector('button[type="submit"]');
