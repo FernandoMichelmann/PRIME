@@ -454,7 +454,7 @@ document.addEventListener("DOMContentLoaded", () => {
             resultStatus.innerHTML = `
                 <span class="status-neutral">
                     <i data-lucide="minus"></i>
-                    ${revenue !== 0 || expense !== 0 ? "Projeção de caixa" : "Aguardando lançamentos"}
+                    Projeção diária
                 </span>
                 <span class="muted">Previsão de fechamento de hoje</span>
             `;
