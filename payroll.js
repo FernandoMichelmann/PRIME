@@ -181,7 +181,7 @@
         });
         employeeForm?.querySelector('[name="state"]')?.addEventListener("input",e=>{e.currentTarget.value=e.currentTarget.value.toUpperCase().replace(/[^A-Z]/g,"").slice(0,2);});
         employeeForm?.querySelector('[name="postalCode"]')?.addEventListener("input",e=>{
-            const digits=e.currentTarget.value.replace(/\\D/g,"").slice(0,8);
+            const digits=e.currentTarget.value.replace(/\D/g,"").slice(0,8);
             e.currentTarget.value=digits.length>5?digits.slice(0,5)+"-"+digits.slice(5):digits;
         });
         employeeForm?.addEventListener("submit", async e=>{
