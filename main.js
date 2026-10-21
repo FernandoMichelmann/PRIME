@@ -408,7 +408,7 @@ document.addEventListener("DOMContentLoaded", () => {
             resultStatus.innerHTML = `
                 <span class="status-neutral">
                     <i data-lucide="minus"></i>
-                    ${revenueCount || expenseCount ? "Resultado do mês" : "Sem registros"}
+                    ${revenue !== 0 || expense !== 0 ? "Resultado do mês" : "Sem registros"}
                 </span>
                 <span class="muted">Mês atual</span>
             `;
