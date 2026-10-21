@@ -1,3 +1,4 @@
+from decimal import Decimal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -93,8 +94,8 @@ def update_employee(
         setattr(employee, field, value)
 
     if employee.salary_split and (
-        (employee.salary_day5_amount + employee.salary_day20_amount).quantize(__import__("decimal").Decimal("0.01"))
-        != employee.salary.quantize(__import__("decimal").Decimal("0.01"))
+        (employee.salary_day5_amount + employee.salary_day20_amount).quantize(Decimal("0.01"))
+        != employee.salary.quantize(Decimal("0.01"))
     ):
         db.rollback()
         raise HTTPException(
