@@ -613,6 +613,6 @@
         onBack:null
     };
     window.addEventListener("prime:auth-ready",()=>{
-        syncAll().then(()=>ensureAutomaticPayroll()).then(()=>window.dispatchEvent(new CustomEvent("prime:payroll-updated")));
+        syncAll().then(()=>window.dispatchEvent(new CustomEvent("prime:payroll-updated")));
     });
 })();
