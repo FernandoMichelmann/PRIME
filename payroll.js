@@ -224,14 +224,14 @@
             const amountText=prompt("Valor (R$):",String(p.amount??""));if(amountText===null)return;
             const dueDate=prompt("Data de vencimento (AAAA-MM-DD):",p.dueDate||"");if(dueDate===null)return;
             const status=prompt("Status (pendente ou pago):",p.status||"pendente");if(status===null)return;
-            if(!/^\\d{4}-(0[1-9]|1[0-2])$/.test(month.trim())){alert("Competência inválida. Use AAAA-MM.");return;}
-            if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(dueDate.trim())){alert("Data inválida. Use AAAA-MM-DD.");return;}
+            if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month.trim())){alert("Competência inválida. Use AAAA-MM.");return;}
+            if(!/^\d{4}-\d{2}-\d{2}$/.test(dueDate.trim())){alert("Data inválida. Use AAAA-MM-DD.");return;}
             const amount=Number(amountText.replace(",","."));if(!(amount>0)){alert("Informe um valor maior que zero.");return;}
             if(!["pendente","pago"].includes(status.trim())){alert("Status deve ser pendente ou pago.");return;}
             let paidAt=null;
             if(status.trim()==="pago"){
                 paidAt=prompt("Data efetiva do pagamento (AAAA-MM-DD):",p.paidAt||today());if(paidAt===null)return;
-                if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(paidAt.trim())){alert("Data efetiva inválida.");return;}
+                if(!/^\d{4}-\d{2}-\d{2}$/.test(paidAt.trim())){alert("Data efetiva inválida.");return;}
             }
             const method=prompt("Método de pagamento (PIX, transferência etc.):",p.method||"");if(method===null)return;
             try{
