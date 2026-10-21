@@ -3275,6 +3275,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (isFixed) {
             const fixedDay = Number(firstDate.slice(8, 10));
             const createdAt = new Date().toISOString();
+            const recurringGroupId = `recurring-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
             const recurringExpenses = Array.from({ length: repeatMonths }, (_, index) => {
                 const dueDate = addMonthsKeepingDay(firstDate, index, fixedDay);
                 const installmentId = `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`;
@@ -3286,7 +3287,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     expenseType: "fixed",
                     totalAmount: Math.round(totalAmount * 100) / 100,
                     installmentCount: 1,
-                    recurringGroupId: `recurring-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                    recurringGroupId,
                     recurrenceIndex: index + 1,
                     recurrenceCount: repeatMonths,
                     createdAt,
