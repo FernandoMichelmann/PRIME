@@ -2906,7 +2906,10 @@ document.addEventListener("DOMContentLoaded", () => {
             filled.push("valor");
         }
 
-        if (data.firstDate && !form.elements.firstDate.value) {
+        // O campo de vencimento começa preenchido com hoje por padrão.
+        // Ao importar um documento, substituímos esse valor padrão pela data do boleto,
+        // mas preservamos uma data diferente que o usuário já tenha informado.
+        if (data.firstDate && (!form.elements.firstDate.value || form.elements.firstDate.value === todayISO)) {
             form.elements.firstDate.value = data.firstDate;
             filled.push("vencimento");
         }
