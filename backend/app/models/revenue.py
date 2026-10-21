@@ -54,6 +54,7 @@ class ReceivableTitle(Base):
     __tablename__ = "receivable_titles"
     __table_args__ = (
         Index("ix_receivable_titles_company_due_status", "company_id", "due_date", "status"),
+        UniqueConstraint("company_id", "title_number", name="uq_receivable_titles_company_number"),
     )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
@@ -74,7 +75,10 @@ class RevenueReceipt(Base):
     """Evento de entrada financeira; não representa confirmação bancária automática."""
 
     __tablename__ = "revenue_receipts"
-    __table_args__ = (Index("ix_revenue_receipts_company_payment_date", "company_id", "payment_date"),)
+    __table_args__ = (
+        Index("ix_revenue_receipts_company_payment_date", "company_id", "payment_date"),
+        UniqueConstraint("company_id", "transaction_reference", name="uq_revenue_receipts_company_transaction"),
+    )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     company_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
