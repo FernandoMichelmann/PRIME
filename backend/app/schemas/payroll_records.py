@@ -13,6 +13,11 @@ class PayrollPeriodItem(BaseModel):
     kind: str = Field(min_length=1, max_length=40)
     amount: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
     created_at: datetime | None = None
+    due_date: date | None = None
+    source: str = Field(default="manual", max_length=40)
+    approved: bool = False
+    payment_id: str | None = Field(default=None, max_length=80)
+    extra_category: str | None = Field(default=None, max_length=40)
 
 
 class PayrollPeriodCreate(BaseModel):
