@@ -21,7 +21,7 @@
     })[c]);
     const copy = value => JSON.parse(JSON.stringify(value));
     let state = load();
-    let originalContent = null;
+    let originalContent = $(".content") ? [...$(".content").children] : null;
     let activeSection = "appearance";
 
     function load() {
