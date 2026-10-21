@@ -261,7 +261,17 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function getMonthlyExpenseTotal(month = currentMonth()) {
-        return getMonthlyPaidExpenseTotal(month) + getMonthlyUnpaidExpenseTotal(month);
+        const ordinaryExpenses = getMonthTransactions(month)
+            .filter((item) => item.type === "expense")
+            .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+        const registeredExpenses = getInstallments()
+            .filter((item) => monthKey(item.date) === month)
+            .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+        const payrollPaid = window.PRIMEPayroll && typeof window.PRIMEPayroll.getPaidPaymentsInMonth === "function"
+            ? window.PRIMEPayroll.getPaidPaymentsInMonth(month)
+            : 0;
+        return ordinaryExpenses + registeredExpenses + getFinalizedTripTotals(month).expense
+            + getMonthlyVehicleMaintenanceTotal(month) + payrollPaid;
     }
 
     function getAllRevenueRecords() {
