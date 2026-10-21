@@ -286,10 +286,8 @@ document.addEventListener("DOMContentLoaded", () => {
         const unpaidVehicleInvoices = todayVehicleCosts
             .filter((item) => item.paymentMethod === "card")
             .reduce((sum, item) => sum + Math.max(0, Number(item.occurrenceAmount) || 0), 0);
-        const unpaidPayroll = window.PRIMEPayroll && typeof window.PRIMEPayroll.getPendingPaymentsForDate === "function"
-            ? window.PRIMEPayroll.getPendingPaymentsForDate(todayISO)
-            : 0;
-        return unpaidInstallments + unpaidVehicleInvoices + unpaidPayroll;
+        // A folha é projetada pelo custo mensal em aberto, não apenas pelo vencimento de hoje.
+        return unpaidInstallments + unpaidVehicleInvoices;
     }
 
     function getPaidVehicleCostsToday() {
@@ -301,8 +299,11 @@ document.addEventListener("DOMContentLoaded", () => {
     function getProjectedDailyBalance() {
         // O saldo efetivo já inclui os recebimentos e pagamentos realmente registrados.
         // Somente compromissos ainda pendentes de hoje são adicionados à projeção.
+        const pendingMonthlyPayroll = window.PRIMEPayroll && typeof window.PRIMEPayroll.getOutstandingCompetencyCost === "function"
+            ? window.PRIMEPayroll.getOutstandingCompetencyCost(currentMonth())
+            : 0;
         return getCashBalance() + getForecastReceiptsToday()
-            - getForecastUnpaidExpensesToday() - getPaidVehicleCostsToday();
+            - getForecastUnpaidExpensesToday() - getPaidVehicleCostsToday() - pendingMonthlyPayroll;
     }
 
     function getMonthlyRevenueTotal(month = currentMonth()) {
