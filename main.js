@@ -166,7 +166,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const count = cost.paymentMethod === "card" ? Math.max(1, Number(cost.installmentsCount) || 1) : 1;
             const base = cost.paymentMethod === "card" ? (cost.invoiceDueDate || cost.date) : cost.date;
             if (!base) return [];
-            if (count === 1) return monthKey(base) === month ? [{ ...cost, vehicleId: vehicle.id, vehiclePlate: vehicle.plate, occurrenceDate: base, occurrenceAmount: amount }] : [];
+            if (count === 1) return (month == null || monthKey(base) === month) ? [{ ...cost, vehicleId: vehicle.id, vehiclePlate: vehicle.plate, occurrenceDate: base, occurrenceAmount: amount }] : [];
             return Array.from({length:count}, (_,i) => {
                 const date = new Date(base + "T12:00:00");
                 date.setMonth(date.getMonth() + i);
@@ -250,10 +250,10 @@ document.addEventListener("DOMContentLoaded", () => {
     function getMonthlyUnpaidExpenseTotal(month = currentMonth()) {
         // A pagar inclui pendências de meses anteriores: só saem quando forem quitadas.
         const unpaidInstallments = getInstallments()
-            .filter((item) => !item.paid)
+            .filter((item) => !item.paid && monthKey(item.date) <= currentMonth())
             .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
         const unpaidVehicleCosts = getVehicleCostOccurrences(null)
-            .filter((item) => item.paymentMethod === "card")
+            .filter((item) => item.paymentMethod === "card" && monthKey(item.occurrenceDate) <= currentMonth())
             .reduce((sum, item) => sum + (Number(item.occurrenceAmount) || 0), 0);
         const payrollOutstanding = window.PRIMEPayroll && typeof window.PRIMEPayroll.getOutstandingCompetencyCost === "function"
             ? window.PRIMEPayroll.getOutstandingCompetencyCost(null)
