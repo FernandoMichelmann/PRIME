@@ -26,6 +26,8 @@ function sources(){
   const x={id,type:"saída",description:(e.name||"Despesa")+(e.installmentCount>1?" ("+(p.label||((p.number||j+1)+"/"+e.installmentCount))+")":""),category:e.expenseType==="fixed"?"Despesa fixa":"Despesa variável",origin:"Despesas",date,amount,settled:paid?amount:0,pending:paid?0:amount,paid,status:paid?"Pago":(date<now?"Vencido":"Pendente")};
   if(date&&!seen.has(id)){rows.push(x);seen.add(id)}
  }));
+ const payroll=window.PRIMEPayroll&&typeof window.PRIMEPayroll.getCashFlowPayments==="function"?window.PRIMEPayroll.getCashFlowPayments():[];
+ payroll.forEach((p,i)=>{const paid=p.status==="pago",date=paid?String(p.paidAt||p.dueDate||"").slice(0,10):String(p.dueDate||"").slice(0,10),amount=cents(p.amount);if(!date||amount<=0)return;const id="payroll:"+String(p.id||i);if(seen.has(id))return;rows.push({id,type:"saída",description:"Folha · "+(p.employee||"Funcionário")+(p.type?" · "+p.type:""),category:"Folha de pagamento",origin:"Folha de pagamento",date,amount,settled:paid?amount:0,pending:paid?0:amount,paid,status:paid?"Pago":(date<now?"Vencido":"Pendente")});seen.add(id)});
  return rows;
 }
 function summary(){
