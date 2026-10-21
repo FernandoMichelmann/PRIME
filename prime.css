@@ -3264,7 +3264,12 @@ tbody tr:hover {
 .payroll-table td{font-size:11px}
 .payroll-table td strong,.payroll-table td small{display:block}
 .payroll-table td small{margin-top:4px;color:var(--muted);font-size:10px}
-.payroll-small-button{padding:6px 9px;font-size:10px;margin-left:5px}
+.payroll-small-button{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-height:30px;padding:6px 10px;margin:0;color:#DCE8F8;background:#14243A;border:1px solid #365171;border-radius:6px;font-size:10px;font-weight:700;line-height:1.2;white-space:nowrap;visibility:visible;opacity:1}
+.payroll-small-button:hover{background:#1B3554;border-color:#5B8CC5;color:#FFFFFF}
+.payroll-table th:last-child,.payroll-table td:last-child{position:sticky;right:0;z-index:2;background:#0C1727;box-shadow:-8px 0 12px rgba(0,0,0,.18)}
+.payroll-table th:last-child{z-index:3}
+.payroll-table td:last-child>div{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-width:210px}
+.payroll-table td:last-child .payroll-small-button{position:relative;z-index:1}
 .payroll-period-total{font-size:22px;color:#A8D1FF}
 .payroll-actions{display:flex;justify-content:flex-end;margin-top:18px}
 @media(max-width:1000px){.payroll-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.payroll-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
