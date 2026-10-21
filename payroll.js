@@ -78,6 +78,8 @@
             return;
         }
         try {
+            // Corrige vínculos órfãos criados por exclusões antigas antes de carregar a folha.
+            await auth.requestCompany("/payroll/periods/repair-stale-links", {method:"POST"});
             const [periodRows, paymentRows] = await Promise.all([
                 auth.requestCompany("/payroll/periods"),
                 auth.requestCompany("/payroll/payments")
