@@ -362,7 +362,7 @@ document.addEventListener("DOMContentLoaded", () => {
             balanceStatus.innerHTML = `
                 <span class="status-neutral">
                     <i data-lucide="minus"></i>
-                    ${transactions.length || getInstallments().some((item) => item.paid)
+                    ${transactions.length || getInstallments().some((item) => item.paid) || getPaidRevenueRecords().length
                     ? "Movimentações registradas"
                     : "Sem movimentações"}
                 </span>
