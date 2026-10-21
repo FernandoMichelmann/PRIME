@@ -147,19 +147,31 @@ def delete_employee(
         PayrollPayment.company_id == membership.company_id,
         PayrollPayment.employee_id == employee_id,
     ).limit(1))
+    if payment is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Este funcionário possui pagamentos registrados. Para preservar a auditoria financeira, não é possível excluir o cadastro.",
+        )
+
+    # Sem pagamentos efetivamente registrados, a exclusão do cadastro também
+    # remove suas programações de folha pendentes, inclusive de competências
+    # anteriores, para que itens antigos não bloqueiem a operação.
     periods = db.scalars(select(PayrollPeriod).where(
         PayrollPeriod.company_id == membership.company_id,
     )).all()
-    has_payroll_history = any(
-        str(item.get("employee_id", "")) == str(employee_id)
-        for period in periods
-        for item in (period.items or [])
-    )
-    if payment is not None or has_payroll_history:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Este funcionário possui histórico de folha ou pagamentos. Para preservar a auditoria, encerre o contrato e mantenha o cadastro.",
-        )
+    removed_items = 0
+    affected_periods = 0
+    for period in periods:
+        original_items = list(period.items or [])
+        remaining_items = [
+            item for item in original_items
+            if str(item.get("employee_id", "")) != str(employee_id)
+        ]
+        removed = len(original_items) - len(remaining_items)
+        if removed:
+            period.items = remaining_items
+            removed_items += removed
+            affected_periods += 1
 
     db.add(AuditLog(
         company_id=membership.company_id,
@@ -167,7 +179,11 @@ def delete_employee(
         action="payroll.employee.deleted",
         resource_type="payroll_employee",
         resource_id=str(employee.id),
-        details={"name": employee.name},
+        details={
+            "name": employee.name,
+            "removed_payroll_items": removed_items,
+            "affected_periods": affected_periods,
+        },
         ip_address=request.client.host if request.client else None,
     ))
     db.delete(employee)
