@@ -114,6 +114,7 @@
             const user = await request("/auth/me");
             sessionStorage.setItem(USER_KEY, JSON.stringify(user));
             unlockScreen(user);
+            window.dispatchEvent(new CustomEvent("prime:auth-ready"));
         } catch (_) {
             token = "";
             sessionStorage.removeItem(TOKEN_KEY);
@@ -139,6 +140,7 @@
             sessionStorage.setItem(USER_KEY, JSON.stringify(user));
             form.reset();
             unlockScreen(user);
+            window.dispatchEvent(new CustomEvent("prime:auth-ready"));
         } catch (error) {
             token = "";
             sessionStorage.removeItem(TOKEN_KEY);
