@@ -115,7 +115,7 @@
                             <label>Cliente contratante *<input name="customer_name" required maxlength="180"></label>
                             <label>Tipo de receita<select name="category"><option value="frete_fracionado">Frete de carga fracionada</option><option value="frete_lotacao">Frete de lotação</option><option value="transporte_dedicado">Transporte dedicado</option><option value="armazenagem">Armazenagem</option><option value="servico_logistico">Serviço logístico</option><option value="reembolso">Reembolso contratado</option><option value="outra">Outra receita</option></select></label>
                             <label class="wide">Descrição do serviço *<input name="description" required maxlength="500" placeholder="Ex.: transporte rodoviário de carga"></label>
-                            <label>Vencimento da fatura *<input name="due_date" type="date" required></label><label>Data de competência<input name="competency_date" type="date"></label><label>Modalidade de transporte<input name="transport_mode" maxlength="60" placeholder="Fracionado, lotação..."></label>
+                            <label>Data de competência (vencimento da fatura) *<input name="due_date" type="date" required></label><label>Modalidade de transporte<input name="transport_mode" maxlength="60" placeholder="Fracionado, lotação..."></label>
                             <label>Referência da operação<input name="operation_reference" maxlength="100"></label><label>Número do CT-e<input name="cte_number" maxlength="80"></label><label>Peso (kg)<input name="weight_kg" type="number" min="0" step="0.001"></label>
                             <label>Origem<input name="origin" maxlength="180"></label><label>Destino<input name="destination" maxlength="180"></label><label>Valor-base (R$) *<input name="base_amount" type="number" min="0.01" step="0.01" required></label>
                             <label>Adicionais (R$)<input name="additions_amount" type="number" min="0" step="0.01" value="0"></label><label>Pedágio repassado (R$)<input name="toll_amount" type="number" min="0" step="0.01" value="0"></label><label>Desconto autorizado (R$)<input name="discount_amount" type="number" min="0" step="0.01" value="0"></label>
@@ -167,7 +167,7 @@
         const columns = [
             ["Referência", "reference"], ["Cliente", "customer_name"], ["Descrição", "description"],
             ["Categoria", "category"], ["Modalidade", "transport_mode"], ["CT-e", "cte_number"],
-            ["Competência", "competency_date"], ["Data do serviço", "service_date"],
+            ["Data de competência / vencimento", "due_date"],
             ["Faturamento", "issue_date"], ["Situação", "billing_status"],
             ["Valor-base", "base_amount"], ["Adicionais", "additions_amount"],
             ["Pedágio", "toll_amount"], ["Desconto", "discount_amount"], ["Total", "total_amount"]
@@ -304,7 +304,7 @@
             table.innerHTML = '<div class="revenue-empty">Nenhuma receita encontrada. Cadastre a primeira receita ou ajuste os filtros.</div>';
             return;
         }
-        table.innerHTML = '<div class="revenue-table-wrap"><table class="revenue-table"><thead><tr><th>Referência / cliente</th><th>Serviço</th><th>Vencimento da fatura</th><th>Faturamento</th><th>Pagamento</th><th class="align-right">Valor total</th><th>Ações</th></tr></thead><tbody>' +
+        table.innerHTML = '<div class="revenue-table-wrap"><table class="revenue-table"><thead><tr><th>Referência / cliente</th><th>Serviço</th><th>Competência / vencimento</th><th>Faturamento</th><th>Pagamento</th><th class="align-right">Valor total</th><th>Ações</th></tr></thead><tbody>' +
             rows.map(row => { const paid = row.payment_status === "recebido"; const ref = esc(row.reference); const state = getBillingState(row); return '<tr><td><strong>' + ref + '</strong><small>' + esc(row.customer_name) + '</small></td><td>' + esc(row.description) + '<small>' + esc(row.cte_number ? "CT-e " + row.cte_number : row.operation_reference || "Sem operação vinculada") + '</small></td><td>' + dateLabel(getDueDate(row)) + '</td><td><span class="revenue-state ' + state.css + '">' + state.label + '</span></td><td><span class="revenue-state ' + (paid ? "paid" : "") + '">' + (paid ? "Pago em " + dateLabel(row.payment_date) : "A receber") + '</span></td><td class="align-right"><strong>' + money(row.total_amount) + '</strong></td><td><div class="revenue-actions"><button type="button" class="revenue-btn secondary" data-revenue-action="' + (paid ? "reopen" : "edit") + '" data-reference="' + ref + '">' + (paid ? "Reabrir fatura" : "Editar") + '</button><button type="button" class="revenue-btn danger" data-revenue-action="delete" data-reference="' + ref + '">Excluir</button><button type="button" class="revenue-btn ' + (paid ? "paid-button" : "") + '" data-revenue-action="receive" data-reference="' + ref + '" ' + (paid ? "disabled" : "") + '>' + (paid ? "Baixado" : "Baixar") + '</button></div></td></tr>'; }).join("") +
             '</tbody></table></div>';
     }
