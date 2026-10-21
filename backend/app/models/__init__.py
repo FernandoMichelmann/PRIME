@@ -6,6 +6,7 @@ from app.models.company import Company
 from app.models.payroll_employee import PayrollEmployee
 from app.models.payroll_period import PayrollPeriod
 from app.models.payroll_payment import PayrollPayment
+from app.models.revenue import ReceivableTitle, ReceiptAllocation, Revenue, RevenueReceipt
 from app.models.user import User
 
 __all__ = [
@@ -14,6 +15,10 @@ __all__ = [
     "PayrollEmployee",
     "PayrollPeriod",
     "PayrollPayment",
+    "ReceivableTitle",
+    "ReceiptAllocation",
+    "Revenue",
+    "RevenueReceipt",
     "Permission",
     "Role",
     "RolePermission",
