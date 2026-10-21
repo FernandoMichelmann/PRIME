@@ -17,7 +17,7 @@ document.head.appendChild(style);
 function sources(){
  const rows=[], seen=new Set(), revenues=readArray(REVENUE_KEY), expenses=readArray(EXPENSE_KEY), now=today();
  revenues.forEach((r,i)=>{
-  const id=String(r.reference||r.id||("revenue-"+i)), total=cents(r.total_amount), received=Math.min(total,cents(r.received_amount??(r.payment_status==="recebido"?r.total_amount:0))), due=r.due_date||r.competency_date||r.service_date||"";
+  const id=String(r.reference||r.id||("revenue-"+i)), total=cents(r.total_amount), received=Math.min(total,Math.max(cents(r.received_amount),r.payment_status==="recebido"?total:0)), due=r.due_date||r.competency_date||r.service_date||"";
   if(received>0){const x={id:id+":received",type:"entrada",description:r.description||("Receita "+id),category:r.category||"Receitas",origin:"Receitas",date:r.payment_date||due,amount:received,settled:received,status:"Pago",pending:0,paid:true};if(x.date&&!seen.has(x.id)){rows.push(x);seen.add(x.id)}}
   if(total>received){const x={id:id+":pending",type:"entrada",description:r.description||("Receita "+id),category:r.category||"Receitas",origin:"Receitas",date:due,amount:total-received,settled:0,pending:total-received,paid:false,status:due&&due<now?"Vencido":"Pendente"};if(x.date&&!seen.has(x.id)){rows.push(x);seen.add(x.id)}}
  });
@@ -84,6 +84,7 @@ function bind(){
 }
 function openPage(){const content=$(".content");if(!content)return;if(!page){page=document.createElement("div");page.id="primeCashFlowPage";page.hidden=true;content.appendChild(page)}dashboardChildren=[...content.children].filter(el=>el!==page);dashboardChildren.forEach(el=>el.hidden=true);page.hidden=false;render();if($("#currentPage"))$("#currentPage").textContent="Fluxo de caixa"}
 function closePage(){if(page)page.hidden=true;dashboardChildren.forEach(el=>el.hidden=false)}
+window.addEventListener("click",e=>{const nav=e.target&&e.target.closest?e.target.closest(".nav-item[data-page]"):null;if(nav&&nav.dataset.page!=="Fluxo de caixa")closePage()},true);
 document.addEventListener("click",e=>{const nav=e.target.closest('.nav-item[data-page]');if(!nav)return;if(nav.dataset.page!=="Fluxo de caixa"){closePage();return}e.preventDefault();e.stopImmediatePropagation();document.querySelectorAll(".nav-item").forEach(el=>el.classList.toggle("active",el===nav));$("#sidebar")?.classList.remove("open");$("#menuToggle")?.setAttribute("aria-expanded","false");openPage()},true);
 window.addEventListener("prime:revenues-updated",()=>{if(page&&!page.hidden)render()});window.addEventListener("prime:payroll-updated",()=>{if(page&&!page.hidden)render()});window.addEventListener("storage",e=>{if([REVENUE_KEY,EXPENSE_KEY,SETTINGS_KEY].includes(e.key)&&page&&!page.hidden)render()});
 window.PRIMECashFlow={refresh:render,getSummary:summary,getMovements:sources,getOpeningSettings:readSettings};
