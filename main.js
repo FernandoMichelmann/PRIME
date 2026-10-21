@@ -264,36 +264,42 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 0);
     }
 
-    function getForecastReceiptsByMonth(month = currentMonth()) {
-        const monthEnd = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0);
-        const lastDay = localISO(monthEnd);
-        return getReceivableRevenueRecords().filter((row) => {
-            const dueDate = String(row.due_date || "");
-            return dueDate.length === 10 && dueDate[4] === "-" && dueDate[7] === "-" && dueDate <= lastDay;
-        }).reduce((sum, row) => {
-            const total = Math.max(0, Number(row.total_amount) || 0);
-            const received = Math.max(0, Number(row.received_amount) || 0);
-            return sum + Math.max(0, total - received);
-        }, 0);
+    function getForecastReceiptsToday() {
+        return getReceivableRevenueRecords()
+            .filter((row) => String(row.due_date || row.competency_date || row.service_date || "") === todayISO)
+            .reduce((sum, row) => {
+                const total = Math.max(0, Number(row.total_amount) || 0);
+                const received = Math.max(0, Number(row.received_amount) || 0);
+                return sum + Math.max(0, total - received);
+            }, 0);
     }
 
-    function getForecastUnpaidExpenses(month = currentMonth()) {
-        const monthEnd = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0);
-        const lastDay = localISO(monthEnd);
+    function getForecastUnpaidExpensesToday() {
         const unpaidInstallments = getInstallments()
-            .filter((item) => !item.paid && item.date && item.date <= lastDay)
+            .filter((item) => !item.paid && String(item.date || "") === todayISO)
             .reduce((sum, item) => sum + Math.max(0, Number(item.amount) || 0), 0);
-        const unpaidVehicleInvoices = getVehicleCostOccurrences(month)
+        const todayVehicleCosts = getVehicleCostOccurrences(currentMonth())
+            .filter((item) => String(item.occurrenceDate || "") === todayISO);
+        const unpaidVehicleInvoices = todayVehicleCosts
             .filter((item) => item.paymentMethod === "card")
             .reduce((sum, item) => sum + Math.max(0, Number(item.occurrenceAmount) || 0), 0);
-        const unpaidPayroll = window.PRIMEPayroll && typeof window.PRIMEPayroll.getPendingPaymentsTotal === "function"
-            ? window.PRIMEPayroll.getPendingPaymentsTotal(month)
+        const unpaidPayroll = window.PRIMEPayroll && typeof window.PRIMEPayroll.getPendingPaymentsForDate === "function"
+            ? window.PRIMEPayroll.getPendingPaymentsForDate(todayISO)
             : 0;
         return unpaidInstallments + unpaidVehicleInvoices + unpaidPayroll;
     }
 
-    function getProjectedMonthEndBalance(month = currentMonth()) {
-        return getCashBalance() + getForecastReceiptsByMonth(month) - getForecastUnpaidExpenses(month);
+    function getPaidVehicleCostsToday() {
+        return getVehicleCostOccurrences(currentMonth())
+            .filter((item) => String(item.occurrenceDate || "") === todayISO && item.paymentMethod !== "card")
+            .reduce((sum, item) => sum + Math.max(0, Number(item.occurrenceAmount) || 0), 0);
+    }
+
+    function getProjectedDailyBalance() {
+        // O saldo efetivo já inclui os recebimentos e pagamentos realmente registrados.
+        // Somente compromissos ainda pendentes de hoje são adicionados à projeção.
+        return getCashBalance() + getForecastReceiptsToday()
+            - getForecastUnpaidExpensesToday() - getPaidVehicleCostsToday();
     }
 
     function getMonthlyRevenueTotal(month = currentMonth()) {
@@ -315,20 +321,28 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function getCashBalance() {
-        const ordinaryTotals = getTotals(transactions);
+        // O saldo efetivo não deve incorporar lançamentos datados no futuro.
+        const ordinaryTotals = getTotals(transactions.filter((item) => !item.date || item.date <= todayISO));
 
         const paidInstallments = getInstallments()
-            .filter((item) => item.paid)
+            .filter((item) => item.paid && String(item.paidAt || item.date || "").slice(0, 10) <= todayISO)
             .reduce((sum, item) => sum + item.amount, 0);
 
-        const finalizedTrips = vehicleTrips.filter((trip) => trip.finalizedAt).reduce((totals, trip) => {
+        const finalizedTrips = vehicleTrips.filter((trip) => {
+            if (!trip.finalizedAt) return false;
+            return String(trip.finalizedAt || trip.tripDate || "").slice(0, 10) <= todayISO;
+        }).reduce((totals, trip) => {
             totals.revenue += Math.max(0, Number(trip.manifestData?.totalFreight) || 0);
             totals.expense += Math.max(0, Number(trip.vehiclePay) || 0);
             totals.expense += (Array.isArray(trip.extraCosts) ? trip.extraCosts : []).reduce((sum, cost) => sum + Math.max(0, Number(cost.amount) || 0), 0);
             return totals;
         }, { revenue: 0, expense: 0 });
-        const paidPayroll = window.PRIMEPayroll ? window.PRIMEPayroll.getPaidPaymentsTotal() : 0;
-        const receivedRevenue = getPaidRevenueRecords().reduce((sum, item) => sum + (Number(item.received_amount ?? item.total_amount) || 0), 0);
+        const paidPayroll = window.PRIMEPayroll && typeof window.PRIMEPayroll.getPaidPaymentsThroughDate === "function"
+            ? window.PRIMEPayroll.getPaidPaymentsThroughDate(todayISO)
+            : (window.PRIMEPayroll ? window.PRIMEPayroll.getPaidPaymentsTotal() : 0);
+        const receivedRevenue = getPaidRevenueRecords()
+            .filter((item) => !item.payment_date || String(item.payment_date).slice(0, 10) <= todayISO)
+            .reduce((sum, item) => sum + (Number(item.received_amount ?? item.total_amount) || 0), 0);
         return ordinaryTotals.revenue + receivedRevenue - ordinaryTotals.expense - paidInstallments - paidPayroll + finalizedTrips.revenue - finalizedTrips.expense;
     }
 
@@ -371,7 +385,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function updateDashboard() {
         const revenue = getMonthlyRevenueTotal();
         const expense = getMonthlyExpenseTotal();
-        const result = getProjectedMonthEndBalance();
+        const result = getProjectedDailyBalance();
         const receivableRecords = getReceivableRevenueRecords();
         const receivableBalance = getReceivableBalance();
 
@@ -442,7 +456,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <i data-lucide="minus"></i>
                     ${revenue !== 0 || expense !== 0 ? "Projeção de caixa" : "Aguardando lançamentos"}
                 </span>
-                <span class="muted">Previsão até o fim do mês</span>
+                <span class="muted">Previsão de fechamento de hoje</span>
             `;
         }
 
