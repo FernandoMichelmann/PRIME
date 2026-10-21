@@ -264,6 +264,38 @@ document.addEventListener("DOMContentLoaded", () => {
         }, 0);
     }
 
+    function getForecastReceiptsByMonth(month = currentMonth()) {
+        const monthEnd = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0);
+        const lastDay = localISO(monthEnd);
+        return getReceivableRevenueRecords().filter((row) => {
+            const dueDate = String(row.due_date || "");
+            return /^\\d{4}-\\d{2}-\\d{2}$/.test(dueDate) && dueDate <= lastDay;
+        }).reduce((sum, row) => {
+            const total = Math.max(0, Number(row.total_amount) || 0);
+            const received = Math.max(0, Number(row.received_amount) || 0);
+            return sum + Math.max(0, total - received);
+        }, 0);
+    }
+
+    function getForecastUnpaidExpenses(month = currentMonth()) {
+        const monthEnd = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0);
+        const lastDay = localISO(monthEnd);
+        const unpaidInstallments = getInstallments()
+            .filter((item) => !item.paid && item.date && item.date <= lastDay)
+            .reduce((sum, item) => sum + Math.max(0, Number(item.amount) || 0), 0);
+        const unpaidVehicleInvoices = getVehicleCostOccurrences(month)
+            .filter((item) => item.paymentMethod === "card")
+            .reduce((sum, item) => sum + Math.max(0, Number(item.occurrenceAmount) || 0), 0);
+        const unpaidPayroll = window.PRIMEPayroll && typeof window.PRIMEPayroll.getPendingPaymentsTotal === "function"
+            ? window.PRIMEPayroll.getPendingPaymentsTotal(month)
+            : 0;
+        return unpaidInstallments + unpaidVehicleInvoices + unpaidPayroll;
+    }
+
+    function getProjectedMonthEndBalance(month = currentMonth()) {
+        return getCashBalance() + getForecastReceiptsByMonth(month) - getForecastUnpaidExpenses(month);
+    }
+
     function getMonthlyRevenueTotal(month = currentMonth()) {
         const ordinaryRevenue = getMonthTransactions(month).filter((item) => item.type === "revenue").reduce((sum, item) => sum + item.amount, 0);
         const receivedRevenue = getPaidRevenueRecords().filter((item) => monthKey(item.payment_date) === month).reduce((sum, item) => sum + (Number(item.received_amount ?? item.total_amount) || 0), 0);
@@ -339,7 +371,7 @@ document.addEventListener("DOMContentLoaded", () => {
     function updateDashboard() {
         const revenue = getMonthlyRevenueTotal();
         const expense = getMonthlyExpenseTotal();
-        const result = revenue - expense;
+        const result = getProjectedMonthEndBalance();
         const receivableRecords = getReceivableRevenueRecords();
         const receivableBalance = getReceivableBalance();
 
