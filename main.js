@@ -269,7 +269,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const lastDay = localISO(monthEnd);
         return getReceivableRevenueRecords().filter((row) => {
             const dueDate = String(row.due_date || "");
-            return /^\\d{4}-\\d{2}-\\d{2}$/.test(dueDate) && dueDate <= lastDay;
+            return dueDate.length === 10 && dueDate[4] === "-" && dueDate[7] === "-" && dueDate <= lastDay;
         }).reduce((sum, row) => {
             const total = Math.max(0, Number(row.total_amount) || 0);
             const received = Math.max(0, Number(row.received_amount) || 0);
