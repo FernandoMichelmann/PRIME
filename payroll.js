@@ -10,10 +10,11 @@
     const blank = () => ({employees:[],periods:[],payments:[]});
     let data = load(), host = null, tab = "resumo", month = monthNow();
     let remoteEmployees = [], apiEmployeeState = "loading", apiEmployeeError = "";
+    let apiRecordsState = "loading", apiRecordsError = "";
 
     function load(){ try { const d=JSON.parse(localStorage.getItem(KEY)||"null"); return d && Array.isArray(d.employees)&&Array.isArray(d.periods)&&Array.isArray(d.payments)?d:blank(); } catch(e){ console.error("Falha ao carregar Folha",e); return blank(); } }
     function save(){ try { localStorage.setItem(KEY,JSON.stringify(data)); window.dispatchEvent(new CustomEvent("prime:payroll-updated")); return true; } catch(e){ console.error(e); alert("Não foi possível salvar. Verifique o armazenamento do navegador."); return false; } }
-    const allEmployees = () => [...remoteEmployees, ...data.employees];
+    const allEmployees = () => remoteEmployees;
     const active = () => allEmployees().filter(e=>e.status==="ativo");
     const employeeById = id => allEmployees().find(e=>e.id===id);
     function mapRemoteEmployee(e) {
@@ -41,8 +42,51 @@
         }
     }
     function apiEmployeeNotice() {
-        if (apiEmployeeState === "connected") return '<div class="payroll-notice"><i data-lucide="database"></i><span><strong>Funcionários conectados ao backend.</strong> Cadastros desta seção são persistidos pela API da empresa. Competências e pagamentos ainda permanecem locais neste navegador; cálculos legais automáticos não estão implementados. Não use para fechar folha real.</span></div>';
-        return '<div class="payroll-notice"><i data-lucide="shield-alert"></i><span><strong>Backend da Folha não confirmado.</strong> '+esc(apiEmployeeError || "Carregando funcionários...")+' Cadastros de funcionários só serão gravados quando a API autenticada estiver disponível. Competências e pagamentos ainda são locais.</span></div>';
+        const stateText = apiEmployeeState === "connected"
+            ? "Funcionários conectados ao backend."
+            : "Não foi possível confirmar a conexão dos funcionários.";
+        const recordsText = apiRecordsState === "connected"
+            ? "Competências e pagamentos conectados ao banco de dados."
+            : "Competências e pagamentos ainda não foram carregados do backend.";
+        const errorText = [apiEmployeeError, apiRecordsError].filter(Boolean).join(" ");
+        return '<div class="payroll-notice"><i data-lucide="database"></i><span><strong>'+esc(stateText)+'</strong> '+esc(recordsText)+' '+esc(errorText)+' Os valores trabalhistas continuam manuais e exigem validação especializada.</span></div>';
+    }
+    function mapRemotePeriod(p) {
+        return { id:p.id, month:p.month, status:p.status, items:(p.items||[]).map(i=>({
+            id:i.id, employeeId:i.employee_id, description:i.description, kind:i.kind,
+            amount:Number(i.amount||0), createdAt:i.created_at||null
+        })), approvedAt:p.approved_at, createdAt:p.created_at, source:"api" };
+    }
+    function mapRemotePayment(p) {
+        return { id:p.id, month:p.month, employeeId:p.employee_id, type:p.payment_type,
+            amount:Number(p.amount||0), dueDate:p.due_date, status:p.status, paidAt:p.paid_at,
+            method:p.method||"", createdAt:p.created_at, source:"api" };
+    }
+    async function syncRemoteRecords() {
+        const auth = window.PRIMEAuth;
+        if (!auth || !auth.getUser?.() || !auth.getCompanyId?.()) {
+            apiRecordsState = "unavailable";
+            apiRecordsError = "Entre em uma conta vinculada a uma transportadora para carregar competências e pagamentos.";
+            return;
+        }
+        try {
+            const [periodRows, paymentRows] = await Promise.all([
+                auth.requestCompany("/payroll/periods"),
+                auth.requestCompany("/payroll/payments")
+            ]);
+            if (!Array.isArray(periodRows) || !Array.isArray(paymentRows)) throw new Error("A API retornou dados inesperados da folha.");
+            data.periods = periodRows.map(mapRemotePeriod);
+            data.payments = paymentRows.map(mapRemotePayment);
+            apiRecordsState = "connected";
+            apiRecordsError = "";
+            window.dispatchEvent(new CustomEvent("prime:payroll-updated"));
+        } catch (error) {
+            apiRecordsState = "error";
+            apiRecordsError = error?.message || "Não foi possível carregar competências e pagamentos do backend.";
+        }
+    }
+    async function syncAll() {
+        await Promise.all([syncRemoteEmployees(), syncRemoteRecords()]);
     }
     const period = () => data.periods.find(p=>p.month===month);
     const costOf = p => (p?.items||[]).filter(i=>i.kind!=="desconto").reduce((s,i)=>s+Math.max(0,Number(i.amount)||0),0);
@@ -50,7 +94,7 @@
     const paidTotal = () => data.payments.filter(p=>p.status==="pago").reduce((s,p)=>s+Number(p.amount||0),0);
     const paidInMonth = m => data.payments.filter(p=>p.status==="pago"&&String(p.paidAt||"").slice(0,7)===m).reduce((s,p)=>s+Number(p.amount||0),0);
 
-    function render(target){ host=target; if(host) { draw(); syncRemoteEmployees().then(()=>{ if(host) draw(); }); } }
+    function render(target){ host=target; if(host) { draw(); syncAll().then(()=>{ if(host) draw(); }); } }
     function draw(){
         if(!host)return;
         const p=period(), employees=active(), pending=data.payments.filter(x=>x.status!=="pago").reduce((s,x)=>s+Number(x.amount||0),0);
@@ -60,7 +104,7 @@
         '<div class="payroll-tabs">'+[['resumo','Resumo'],['funcionarios','Funcionários'],['folha','Folha mensal'],['pagamentos','Pagamentos']].map(x=>'<button type="button" class="payroll-tab '+(tab===x[0]?'active':'')+'" data-p-tab="'+x[0]+'">'+x[1]+'</button>').join('')+'</div>'+
         (tab==="resumo"?summary(employees,p,pending):"")+(tab==="funcionarios"?employeeView():"")+(tab==="folha"?periodView(p):"")+(tab==="pagamentos"?paymentView():"");
         host.querySelector("[data-p-back]")?.addEventListener("click",()=>window.PRIMEPayroll.onBack?.());
-        host.querySelectorAll("[data-p-tab]").forEach(b=>b.addEventListener("click",()=>{tab=b.dataset.pTab;syncRemoteEmployees().then(()=>{if(host)draw();});}));
+        host.querySelectorAll("[data-p-tab]").forEach(b=>b.addEventListener("click",()=>{tab=b.dataset.pTab;draw();}));
         host.querySelectorAll("[data-p-month]").forEach(i=>i.addEventListener("change",()=>{if(/^\d{4}-\d{2}$/.test(i.value))month=i.value;draw();}));
         bindForms();
         if(window.lucide)window.lucide.createIcons();
@@ -68,7 +112,7 @@
     function summary(emps,p,pending){
         return '<div class="payroll-toolbar"><label>Competência <input type="month" data-p-month value="'+esc(month)+'"></label><span class="payroll-status">Status: '+esc(p?p.status:"não criada")+'</span></div>'+
         '<div class="payroll-kpis"><article class="payroll-kpi"><span>Colaboradores ativos</span><strong>'+emps.length+'</strong></article><article class="payroll-kpi"><span>Custo aprovado da competência</span><strong>'+money(monthCost(month))+'</strong></article><article class="payroll-kpi"><span>Pagamentos efetivos no mês</span><strong>'+money(paidInMonth(month))+'</strong></article><article class="payroll-kpi"><span>Pagamentos pendentes</span><strong>'+money(pending)+'</strong></article></div>'+
-        '<div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>Visão geral</h2><p>Indicadores calculados a partir dos registros salvos neste navegador.</p></div><button type="button" class="button-primary" data-p-tab="funcionarios">Cadastrar funcionário</button></div><div class="payroll-empty">'+(emps.length?emps.length+" colaborador(es) ativo(s). A folha "+(p?"está em "+esc(p.status):"ainda não foi criada")+".":"Nenhum funcionário cadastrado. Comece pelo cadastro de colaboradores e prestadores.")+'</div></div>'+
+        '<div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>Visão geral</h2><p>Indicadores calculados a partir dos registros persistidos no banco de dados.</p></div><button type="button" class="button-primary" data-p-tab="funcionarios">Cadastrar funcionário</button></div><div class="payroll-empty">'+(emps.length?emps.length+" colaborador(es) ativo(s). A folha "+(p?"está em "+esc(p.status):"ainda não foi criada")+".":"Nenhum funcionário cadastrado. Comece pelo cadastro de colaboradores e prestadores.")+'</div></div>'+
         '<div class="payroll-panel"><h2>Limites desta versão</h2><p class="payroll-muted">Rubricas manuais não equivalem a cálculo oficial. INSS, IRRF, FGTS, férias, décimo terceiro, rescisões, permissões e backend seguro ainda precisam de implementação e validação especializada.</p></div>';
     }
     function employeeView(){
@@ -90,15 +134,88 @@
         (data.payments.length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Competência</th><th>Funcionário</th><th>Tipo</th><th>Vencimento</th><th>Valor</th><th>Status</th></tr></thead><tbody>'+[...data.payments].sort((a,b)=>(b.dueDate||"").localeCompare(a.dueDate||"")).map(p=>'<tr><td>'+esc(p.month)+'</td><td>'+esc(employeeById(p.employeeId)?.name||"Colaborador")+'</td><td>'+esc(p.type)+'</td><td>'+esc(p.dueDate)+'</td><td>'+money(p.amount)+'</td><td>'+esc(p.status)+(p.status!=="pago"?' <button type="button" class="button-secondary payroll-small-button" data-p-paid="'+esc(p.id)+'">Marcar pago</button>':'')+'</td></tr>').join('')+'</tbody></table></div>':'<div class="payroll-empty">Nenhum pagamento registrado.</div>')+'</div>';
     }
     function bindForms(){
-        $("#p-employee",host)?.addEventListener("submit",async e=>{e.preventDefault();const f=new FormData(e.currentTarget);const name=String(f.get("name")||"").trim();if(!name)return;if(!window.PRIMEAuth||apiEmployeeState!=="connected"){alert("O cadastro exige uma sessão autenticada e a API de Folha disponível. Verifique o backend e tente novamente.");return;}const submit=e.currentTarget.querySelector('button[type="submit"]');if(submit){submit.disabled=true;submit.textContent="Salvando no backend...";}try{const payload={name,tax_id:String(f.get("taxId")||"").trim()||null,employment_type:String(f.get("type")),role:String(f.get("role")||"").trim()||null,department:String(f.get("department")||"").trim()||null,cost_center:String(f.get("costCenter")||"").trim()||null,start_date:String(f.get("startDate")),salary:Number(f.get("salary")||0),is_active:String(f.get("status")||"ativo")==="ativo"};await window.PRIMEAuth.requestCompany("/payroll/employees",{method:"POST",body:JSON.stringify(payload)});await syncRemoteEmployees();draw();}catch(error){alert(error.message||"Não foi possível salvar o funcionário no backend.");if(submit){submit.disabled=false;submit.textContent="Salvar funcionário";}}});
-        host.querySelectorAll("[data-p-toggle]").forEach(b=>b.addEventListener("click",()=>{const e=data.employees.find(x=>x.id===b.dataset.pToggle);if(e){e.status=e.status==="ativo"?"inativo":"ativo";if(save())draw();}}));
-        host.querySelectorAll("[data-p-api-toggle]").forEach(b=>b.addEventListener("click",async()=>{const e=remoteEmployees.find(x=>x.id===b.dataset.pApiToggle);if(!e||!window.PRIMEAuth)return;const next=e.status!=="ativo";if(!confirm((next?"Reativar":"Inativar")+" este funcionário no backend?"))return;b.disabled=true;try{await window.PRIMEAuth.requestCompany("/payroll/employees/"+encodeURIComponent(e.id)+"/status?is_active="+String(next),{method:"PATCH"});await syncRemoteEmployees();draw();}catch(error){alert(error.message||"Falha ao atualizar funcionário.");b.disabled=false;}}));
-        host.querySelector("[data-p-create]")?.addEventListener("click",()=>{if(!period()){data.periods.push({id:makeId(),month,status:"preparação",items:[],createdAt:new Date().toISOString()});if(save())draw();}});
-        $("#p-item",host)?.addEventListener("submit",e=>{e.preventDefault();const p=period();if(!p||!active().length)return;const f=new FormData(e.currentTarget);p.items.push({id:makeId(),employeeId:String(f.get("employeeId")),description:String(f.get("description")||"").trim(),kind:String(f.get("kind")),amount:Number(f.get("amount")||0),createdAt:new Date().toISOString()});if(save())draw();});
-        host.querySelectorAll("[data-p-remove]").forEach(b=>b.addEventListener("click",()=>{const p=period();if(p&&!confirm("Excluir esta rubrica da folha em preparação?"))return;if(p){p.items=p.items.filter(i=>i.id!==b.dataset.pRemove);if(save())draw();}}));
-        host.querySelector("[data-p-approve]")?.addEventListener("click",()=>{const p=period();if(!p||!p.items.length){alert("Adicione uma rubrica antes de aprovar.");return;}if(!confirm("Aprovar os valores manuais? Isso incluirá o custo no dashboard, mas não representa validação contábil ou legal."))return;p.status="aprovada";p.approvedAt=new Date().toISOString();if(save())draw();});
-        $("#p-payment",host)?.addEventListener("submit",e=>{e.preventDefault();const f=new FormData(e.currentTarget),amount=Number(f.get("amount")||0);if(!(amount>0)||!active().length)return;const status=String(f.get("status"));data.payments.push({id:makeId(),month:String(f.get("month")),employeeId:String(f.get("employeeId")),type:String(f.get("type")),amount,dueDate:String(f.get("dueDate")),status,paidAt:status==="pago"?String(f.get("paidAt")||today()):null,method:String(f.get("method")||"").trim(),createdAt:new Date().toISOString()});if(save())draw();});
-        host.querySelectorAll("[data-p-paid]").forEach(b=>b.addEventListener("click",()=>{const p=data.payments.find(x=>x.id===b.dataset.pPaid);if(p&&confirm("Confirmar que o pagamento foi efetivamente realizado?")){p.status="pago";p.paidAt=today();if(save())draw();}}));
+        $("#p-employee",host)?.addEventListener("submit", async e=>{
+            e.preventDefault();
+            const form=e.currentTarget, submit=form.querySelector('button[type="submit"]'), f=new FormData(form);
+            const name=String(f.get("name")||"").trim();
+            if(!name || !window.PRIMEAuth) return;
+            if(submit){submit.disabled=true;submit.textContent="Salvando...";}
+            const payload={
+                name, tax_id:String(f.get("taxId")||"").trim()||null,
+                employment_type:String(f.get("type")||"CLT"), role:String(f.get("role")||"").trim()||null,
+                department:String(f.get("department")||"").trim()||null, cost_center:String(f.get("costCenter")||"").trim()||null,
+                start_date:String(f.get("startDate")), salary:Number(f.get("salary")||0),
+                is_active:String(f.get("status")||"ativo")==="ativo"
+            };
+            try{
+                await window.PRIMEAuth.requestCompany("/payroll/employees",{method:"POST",body:JSON.stringify(payload)});
+                await syncAll(); form.reset(); draw();
+            }catch(error){alert(error.message||"Não foi possível salvar o funcionário no backend.");}
+            finally{if(submit){submit.disabled=false;submit.textContent="Salvar funcionário";}}
+        });
+        host.querySelectorAll("[data-p-api-toggle]").forEach(b=>b.addEventListener("click",async()=>{
+            const employee=remoteEmployees.find(x=>x.id===b.dataset.pApiToggle); if(!employee||!window.PRIMEAuth)return;
+            const next=employee.status!=="ativo";
+            if(!confirm((next?"Reativar":"Inativar")+" este funcionário no backend?"))return;
+            b.disabled=true;
+            try{await window.PRIMEAuth.requestCompany("/payroll/employees/"+encodeURIComponent(employee.id)+"/status?is_active="+String(next),{method:"PATCH"});await syncAll();draw();}
+            catch(error){alert(error.message||"Falha ao atualizar funcionário.");b.disabled=false;}
+        }));
+        host.querySelector("[data-p-create]")?.addEventListener("click",async()=>{
+            if(period())return;
+            if(!window.PRIMEAuth)return;
+            try{
+                await window.PRIMEAuth.requestCompany("/payroll/periods",{method:"POST",body:JSON.stringify({month,status:"preparação",items:[]})});
+                await syncRemoteRecords();draw();
+            }catch(error){alert(error.message||"Não foi possível criar a competência no banco de dados.");}
+        });
+        $("#p-item",host)?.addEventListener("submit",async e=>{
+            e.preventDefault();const current=period();if(!current||!active().length||!window.PRIMEAuth)return;
+            const form=e.currentTarget,f=new FormData(form), amount=Number(f.get("amount")||0);
+            const item={id:makeId(),employee_id:String(f.get("employeeId")),description:String(f.get("description")||"").trim(),kind:String(f.get("kind")),amount,created_at:new Date().toISOString()};
+            const items=[...current.items,item];
+            const submit=form.querySelector('button[type="submit"]');if(submit){submit.disabled=true;submit.textContent="Salvando...";}
+            try{
+                await window.PRIMEAuth.requestCompany("/payroll/periods/"+encodeURIComponent(current.id),{method:"PATCH",body:JSON.stringify({items})});
+                await syncRemoteRecords();draw();
+            }catch(error){alert(error.message||"Não foi possível salvar a rubrica.");}
+            finally{if(submit){submit.disabled=false;submit.textContent="Adicionar rubrica";}}
+        });
+        host.querySelectorAll("[data-p-remove]").forEach(b=>b.addEventListener("click",async()=>{
+            const current=period();if(!current||!confirm("Excluir esta rubrica da competência em preparação?")||!window.PRIMEAuth)return;
+            try{
+                const items=current.items.filter(i=>i.id!==b.dataset.pRemove).map(i=>({id:i.id,employee_id:i.employeeId,description:i.description,kind:i.kind,amount:i.amount,created_at:i.createdAt||null}));
+                await window.PRIMEAuth.requestCompany("/payroll/periods/"+encodeURIComponent(current.id),{method:"PATCH",body:JSON.stringify({items})});
+                await syncRemoteRecords();draw();
+            }catch(error){alert(error.message||"Não foi possível excluir a rubrica.");}
+        }));
+        host.querySelector("[data-p-approve]")?.addEventListener("click",async()=>{
+            const current=period();if(!current||!current.items.length){alert("Adicione uma rubrica antes de aprovar.");return;}
+            if(!confirm("Aprovar os valores manuais? Isso incluirá o custo no dashboard, mas não representa validação contábil ou legal.")||!window.PRIMEAuth)return;
+            try{
+                await window.PRIMEAuth.requestCompany("/payroll/periods/"+encodeURIComponent(current.id),{method:"PATCH",body:JSON.stringify({status:"aprovada",approved_at:new Date().toISOString()})});
+                await syncRemoteRecords();draw();
+            }catch(error){alert(error.message||"Não foi possível aprovar a competência.");}
+        });
+        $("#p-payment",host)?.addEventListener("submit",async e=>{
+            e.preventDefault();const form=e.currentTarget,f=new FormData(form),amount=Number(f.get("amount")||0);
+            if(!(amount>0)||!active().length||!window.PRIMEAuth)return;
+            const status=String(f.get("status")), paidAt=status==="pago"?String(f.get("paidAt")||today()):null;
+            const payload={month:String(f.get("month")),employee_id:String(f.get("employeeId")),payment_type:String(f.get("type")),amount,due_date:String(f.get("dueDate")),status,paid_at:paidAt,method:String(f.get("method")||"").trim()||null};
+            const submit=form.querySelector('button[type="submit"]');if(submit){submit.disabled=true;submit.textContent="Salvando...";}
+            try{
+                await window.PRIMEAuth.requestCompany("/payroll/payments",{method:"POST",body:JSON.stringify(payload)});
+                await syncRemoteRecords();draw();
+            }catch(error){alert(error.message||"Não foi possível registrar o pagamento no backend.");}
+            finally{if(submit){submit.disabled=false;submit.textContent="Registrar pagamento";}}
+        });
+        host.querySelectorAll("[data-p-paid]").forEach(b=>b.addEventListener("click",async()=>{
+            if(!confirm("Confirmar que o pagamento foi efetivamente realizado?")||!window.PRIMEAuth)return;
+            try{
+                await window.PRIMEAuth.requestCompany("/payroll/payments/"+encodeURIComponent(b.dataset.pPaid),{method:"PATCH",body:JSON.stringify({status:"pago",paid_at:today()})});
+                await syncRemoteRecords();draw();
+            }catch(error){alert(error.message||"Não foi possível atualizar o pagamento.");}
+        }));
     }
     window.PRIMEPayroll={render,getCompetencyCost:monthCost,getPaidPaymentsTotal:paidTotal,getPaidPaymentsInMonth:paidInMonth,getPendingPaymentsTotal:()=>data.payments.filter(p=>p.status!=="pago").reduce((s,p)=>s+Number(p.amount||0),0),onBack:null};
 })();
