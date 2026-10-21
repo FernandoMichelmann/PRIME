@@ -417,11 +417,38 @@ def delete_payroll_payment(
     ))
     if payment is None:
         raise HTTPException(status_code=404, detail="Pagamento não encontrado.")
+    # Ao excluir um pagamento, desfaz o vínculo da programação correspondente.
+    # Isso devolve a rubrica para pendente e restaura as ações de edição/custo extra.
+    periods = db.scalars(select(PayrollPeriod).where(
+        PayrollPeriod.company_id == membership.company_id,
+    )).all()
+    changed_periods = []
+    for period in periods:
+        items = [dict(item) for item in (period.items or [])]
+        changed = False
+        for item in items:
+            linked_by_payment = str(item.get("payment_id") or "") == str(payment.id)
+            linked_by_source = bool(payment.source_item_id) and str(item.get("id") or "") == str(payment.source_item_id)
+            if linked_by_payment or linked_by_source:
+                item["payment_id"] = None
+                item["approved"] = False
+                changed = True
+        if changed:
+            period.items = items
+            changed_periods.append(str(period.id))
+            db.add(AuditLog(
+                company_id=membership.company_id, actor_user_id=user.id,
+                action="payroll.period.payment_unlinked", resource_type="payroll_period",
+                resource_id=str(period.id),
+                details={"payment_id": str(payment.id), "source_item_id": str(payment.source_item_id) if payment.source_item_id else None},
+                ip_address=request.client.host if request.client else None,
+            ))
     db.add(AuditLog(
         company_id=membership.company_id, actor_user_id=user.id,
         action="payroll.payment.deleted", resource_type="payroll_payment",
         resource_id=str(payment.id),
-        details={"month": payment.month, "amount": str(payment.amount), "status": payment.status},
+        details={"month": payment.month, "amount": str(payment.amount), "status": payment.status,
+                 "unlinked_periods": changed_periods},
         ip_address=request.client.host if request.client else None,
     ))
     db.delete(payment)
