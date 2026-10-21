@@ -6,6 +6,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.api.routes.auth import router as auth_router
 from app.api.routes.developer import router as developer_router
 from app.api.routes.payroll import router as payroll_router
+from app.api.routes.users import router as users_router
 from app.core.config import get_settings
 from app.db.session import engine
 
@@ -34,6 +35,7 @@ app.add_middleware(
 app.include_router(auth_router, prefix=settings.api_v1_prefix)
 app.include_router(developer_router, prefix=settings.api_v1_prefix)
 app.include_router(payroll_router, prefix=settings.api_v1_prefix)
+app.include_router(users_router, prefix=settings.api_v1_prefix)
 
 
 @app.get("/health/live", tags=["health"])
