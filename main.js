@@ -231,14 +231,37 @@ document.addEventListener("DOMContentLoaded", () => {
         }, { revenue: 0, expense: 0 });
     }
 
-    function getMonthlyExpenseTotal(month = currentMonth()) {
-        const ordinaryExpenses = getMonthTransactions(month).filter((item) => item.type === "expense").reduce((sum, item) => sum + item.amount, 0);
-        const registeredExpenses = getInstallments().filter((item) => monthKey(item.date) === month).reduce((sum, item) => sum + item.amount, 0);
-        // Folha só entra em Despesas depois que o pagamento for marcado como pago.
-        const payrollCost = window.PRIMEPayroll && typeof window.PRIMEPayroll.getPaidPaymentsInMonth === "function"
+    function getMonthlyPaidExpenseTotal(month = currentMonth()) {
+        const ordinaryExpenses = getMonthTransactions(month)
+            .filter((item) => item.type === "expense")
+            .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+        const paidInstallments = getInstallments()
+            .filter((item) => item.paid && monthKey(item.paidAt || item.date) === month)
+            .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+        const paidVehicleCosts = getVehicleCostOccurrences(month)
+            .filter((item) => item.paymentMethod !== "card")
+            .reduce((sum, item) => sum + (Number(item.occurrenceAmount) || 0), 0);
+        const payrollPaid = window.PRIMEPayroll && typeof window.PRIMEPayroll.getPaidPaymentsInMonth === "function"
             ? window.PRIMEPayroll.getPaidPaymentsInMonth(month)
             : 0;
-        return ordinaryExpenses + registeredExpenses + getFinalizedTripTotals(month).expense + getMonthlyVehicleMaintenanceTotal(month) + payrollCost;
+        return ordinaryExpenses + paidInstallments + getFinalizedTripTotals(month).expense + paidVehicleCosts + payrollPaid;
+    }
+
+    function getMonthlyUnpaidExpenseTotal(month = currentMonth()) {
+        const unpaidInstallments = getInstallments()
+            .filter((item) => !item.paid && monthKey(item.date) === month)
+            .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+        const unpaidVehicleCosts = getVehicleCostOccurrences(month)
+            .filter((item) => item.paymentMethod === "card")
+            .reduce((sum, item) => sum + (Number(item.occurrenceAmount) || 0), 0);
+        const payrollOutstanding = window.PRIMEPayroll && typeof window.PRIMEPayroll.getOutstandingCompetencyCost === "function"
+            ? window.PRIMEPayroll.getOutstandingCompetencyCost(month)
+            : 0;
+        return unpaidInstallments + unpaidVehicleCosts + payrollOutstanding;
+    }
+
+    function getMonthlyExpenseTotal(month = currentMonth()) {
+        return getMonthlyPaidExpenseTotal(month) + getMonthlyUnpaidExpenseTotal(month);
     }
 
     function getAllRevenueRecords() {
@@ -391,6 +414,8 @@ document.addEventListener("DOMContentLoaded", () => {
     function updateDashboard() {
         const revenue = getMonthlyRevenueTotal();
         const expense = getMonthlyExpenseTotal();
+        const paidExpense = getMonthlyPaidExpenseTotal();
+        const unpaidExpense = getMonthlyUnpaidExpenseTotal();
         const result = getProjectedDailyBalance();
         const receivableRecords = getReceivableRevenueRecords();
         const receivableBalance = getReceivableBalance();
@@ -399,12 +424,20 @@ document.addEventListener("DOMContentLoaded", () => {
             $("#balanceValue").textContent = money(getCashBalance());
         }
 
+        if ($("#receivedValue")) {
+            $("#receivedValue").textContent = money(revenue);
+        }
+
         if ($("#receivableValue")) {
             $("#receivableValue").textContent = money(receivableBalance);
         }
 
-        if ($("#expenseValue")) {
-            $("#expenseValue").textContent = money(expense);
+        if ($("#paidExpenseValue")) {
+            $("#paidExpenseValue").textContent = money(paidExpense);
+        }
+
+        if ($("#unpaidExpenseValue")) {
+            $("#unpaidExpenseValue").textContent = money(unpaidExpense);
         }
 
         if ($("#resultValue")) {
@@ -420,9 +453,11 @@ document.addEventListener("DOMContentLoaded", () => {
             (window.PRIMEPayroll && typeof window.PRIMEPayroll.getPaidPaymentsInMonth === "function" && window.PRIMEPayroll.getPaidPaymentsInMonth(currentMonth()) > 0 ? 1 : 0);
 
         const balanceStatus = $(".kpi-card:nth-child(1) .kpi-bottom");
-        const receivableStatus = $(".kpi-card:nth-child(2) .kpi-bottom");
-        const expenseStatus = $(".kpi-card:nth-child(3) .kpi-bottom");
-        const resultStatus = $(".kpi-card:nth-child(4) .kpi-bottom");
+        const receivedStatus = $("#receivedStatus");
+        const receivableStatus = $("#receivableStatus");
+        const paidExpenseStatus = $("#paidExpenseStatus");
+        const unpaidExpenseStatus = $("#unpaidExpenseStatus");
+        const resultStatus = $("#resultValue")?.closest(".kpi-card")?.querySelector(".kpi-bottom");
 
         if (balanceStatus) {
             balanceStatus.innerHTML = `
@@ -436,6 +471,16 @@ document.addEventListener("DOMContentLoaded", () => {
             `;
         }
 
+        if (receivedStatus) {
+            receivedStatus.innerHTML = `
+                <span class="status-neutral">
+                    <i data-lucide="minus"></i>
+                    ${revenue > 0 ? "Recebimentos registrados" : "Nenhum recebimento no mês"}
+                </span>
+                <span class="muted">Recebido no mês atual</span>
+            `;
+        }
+
         if (receivableStatus) {
             receivableStatus.innerHTML = `
                 <span class="status-neutral">
@@ -446,13 +491,23 @@ document.addEventListener("DOMContentLoaded", () => {
             `;
         }
 
-        if (expenseStatus) {
-            expenseStatus.innerHTML = `
+        if (paidExpenseStatus) {
+            paidExpenseStatus.innerHTML = `
                 <span class="status-neutral">
                     <i data-lucide="minus"></i>
-                    ${expenseCount ? `${expenseCount} compromisso(s)` : "Sem registros"}
+                    ${paidExpense > 0 ? "Pagamentos registrados" : "Nenhum pagamento no mês"}
                 </span>
-                <span class="muted">Mês atual</span>
+                <span class="muted">Pago no mês atual</span>
+            `;
+        }
+
+        if (unpaidExpenseStatus) {
+            unpaidExpenseStatus.innerHTML = `
+                <span class="status-neutral">
+                    <i data-lucide="minus"></i>
+                    ${unpaidExpense > 0 ? "Há compromissos pendentes" : "Nenhuma despesa pendente"}
+                </span>
+                <span class="muted">A pagar no mês atual</span>
             `;
         }
 
