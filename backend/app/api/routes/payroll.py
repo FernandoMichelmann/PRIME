@@ -241,6 +241,60 @@ def _validate_period_items(items: list[dict], company_id, db: Session) -> None:
         )
 
 
+@router.post("/periods/repair-stale-links")
+def repair_stale_payroll_links(
+    request: Request,
+    membership=Depends(require_company_permission("payroll.write")),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Repair payroll items linked to payment records that no longer exist."""
+    payments = db.scalars(
+        select(PayrollPayment).where(PayrollPayment.company_id == membership.company_id)
+    ).all()
+    valid_payment_ids = {str(payment.id) for payment in payments}
+    valid_source_ids = {
+        str(payment.source_item_id)
+        for payment in payments
+        if payment.source_item_id is not None
+    }
+    periods = db.scalars(
+        select(PayrollPeriod).where(PayrollPeriod.company_id == membership.company_id)
+    ).all()
+    repaired_items = 0
+    repaired_periods = []
+    for period in periods:
+        items = [dict(item) for item in (period.items or [])]
+        changed = False
+        for item in items:
+            payment_id = str(item.get("payment_id") or "")
+            if payment_id and payment_id not in valid_payment_ids:
+                # Do not unlink if a live payment still references this source item.
+                if str(item.get("id") or "") not in valid_source_ids:
+                    item["payment_id"] = None
+                    item["approved"] = False
+                    repaired_items += 1
+                    changed = True
+        if changed:
+            period.items = items
+            repaired_periods.append(str(period.id))
+            db.add(AuditLog(
+                company_id=membership.company_id,
+                actor_user_id=user.id,
+                action="payroll.period.stale_payment_link_repaired",
+                resource_type="payroll_period",
+                resource_id=str(period.id),
+                details={"repaired_items": sum(
+                    1 for item in items
+                    if not item.get("payment_id") and not item.get("approved")
+                )},
+                ip_address=request.client.host if request.client else None,
+            ))
+    if repaired_items:
+        db.commit()
+    return {"repaired_items": repaired_items, "repaired_periods": repaired_periods}
+
+
 @router.get("/periods", response_model=list[PayrollPeriodResponse])
 def list_payroll_periods(
     month: str | None = None,
