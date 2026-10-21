@@ -150,5 +150,40 @@
         }
     });
 
+    function requestCompany(path, options) {
+        let user = {};
+        try { user = JSON.parse(sessionStorage.getItem(USER_KEY) || "{}"); } catch (_) {}
+        const memberships = Array.isArray(user.memberships) ? user.memberships : [];
+        const selected = sessionStorage.getItem("primeCompanyId");
+        const membership = memberships.find(item => item.company_id === selected) || memberships[0];
+        if (!membership || !membership.company_id) {
+            throw new Error("Seu usuário não possui vínculo ativo com uma transportadora no PRIME.");
+        }
+        return request(path, {
+            ...(options || {}),
+            headers: {
+                ...((options && options.headers) || {}),
+                "X-Company-ID": membership.company_id
+            }
+        });
+    }
+
+    window.PRIMEAuth = {
+        request,
+        requestCompany,
+        getUser: () => {
+            try { return JSON.parse(sessionStorage.getItem(USER_KEY) || "null"); }
+            catch (_) { return null; }
+        },
+        getCompanyId: () => {
+            try {
+                const user = JSON.parse(sessionStorage.getItem(USER_KEY) || "{}");
+                const memberships = Array.isArray(user.memberships) ? user.memberships : [];
+                const selected = sessionStorage.getItem("primeCompanyId");
+                return (memberships.find(item => item.company_id === selected) || memberships[0] || {}).company_id || null;
+            } catch (_) { return null; }
+        }
+    };
+
     document.addEventListener("DOMContentLoaded", validateSession);
 })();
