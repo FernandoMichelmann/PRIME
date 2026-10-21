@@ -1747,6 +1747,12 @@ document.addEventListener("DOMContentLoaded", () => {
         const page = createExpensesPage();
 
         renderExpensesHome();
+
+        // Garante que apenas uma tela de módulo fique visível por vez.
+        // A tela Receitas é criada por um arquivo de navegação independente.
+        Array.from(content.children).forEach((child) => {
+            child.hidden = child !== page;
+        });
         page.hidden = false;
 
         if ($("#currentPage")) {
