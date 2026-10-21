@@ -1249,7 +1249,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const cityHtml = cities.length ? '<div class="vehicle-trip-city-list">' + cities.map((city) => '<span>' + escapeHTML(city) + '</span>').join("") + '</div>' : '<p class="vehicle-trip-no-data">Nenhuma cidade foi identificada no manifesto.</p>';
         const rowHtml = cteRows.map((row) => '<tr><td>' + escapeHTML(row.cte) + '</td><td>' + escapeHTML(row.city + (row.uf ? "/" + row.uf : "")) + '</td><td>' + (row.weightKg == null ? "—" : formatManifestNumber(row.weightKg, 1)) + '</td><td>' + (row.volumes == null ? "—" : formatManifestNumber(row.volumes, 0)) + '</td><td>' + (row.freightValue == null ? "—" : "R$ " + formatManifestNumber(row.freightValue, 2)) + '</td></tr>').join("");
         const costRows = costs.length ? costs.map((cost) => '<div class="vehicle-trip-cost-row"><div><strong>' + escapeHTML(cost.category || "Outro custo") + '</strong><span>' + escapeHTML([cost.location, cost.fuelType, cost.liters ? cost.liters + " L" : "", cost.km ? "KM " + cost.km : "", cost.description].filter(Boolean).join(" • ")) + '</span></div><strong>' + money(Number(cost.amount) || 0) + '</strong>' + (isFinalized ? '' : '<button type="button" class="button-secondary" data-cost-delete="' + escapeHTML(cost.id) + '" aria-label="Excluir custo extra"><i data-lucide="trash-2"></i></button>') + '</div>').join("") : '<p class="vehicle-trip-no-data">Nenhum custo extra cadastrado nesta viagem.</p>';
-        return '<div class="expenses-page-header"><div class="eyebrow">GESTÃO FINANCEIRA / VEÍCULOS / VIAGENS</div><h1>Detalhes da viagem<span class="blue-period">.</span></h1><p>Dados cadastrais, custos e informações extraídas do manifesto.</p><div class="vehicle-trips-toolbar"><button type="button" class="button-secondary" data-trip-action="back-list"><i data-lucide="arrow-left"></i> Voltar para viagens</button>' + (isFinalized ? '<span class="vehicle-trip-status-finalized">Viagem finalizada</span><button type="button" class="button-primary" data-trip-action="reopen-trip"><i data-lucide="rotate-ccw"></i> Reabrir viagem</button>' : '<button type="button" class="button-primary" data-trip-action="finalize-trip"><i data-lucide="check-circle"></i> Finalizar viagem</button>') + '<button type="button" class="button-secondary" data-trip-action="trip-report"><i data-lucide="file-down"></i> Relatório PDF</button><button type="button" class="button-danger" data-trip-action="delete-trip"><i data-lucide="trash-2"></i> Excluir viagem</button></div></div>' +
+        return '<div class="expenses-page-header"><div class="eyebrow">GESTÃO FINANCEIRA / VEÍCULOS / VIAGENS</div><h1>Detalhes da viagem<span class="blue-period">.</span></h1><p>Dados cadastrais, custos e informações extraídas do manifesto.</p><div class="vehicle-trips-toolbar"><button type="button" class="button-secondary" data-trip-action="back-list"><i data-lucide="arrow-left"></i> Voltar para viagens</button>' + (isFinalized ? '<span class="vehicle-trip-status-finalized">Viagem finalizada</span><button type="button" class="button-primary" data-trip-action="reopen-trip"><i data-lucide="rotate-ccw"></i> Reabrir viagem</button>' : '<button type="button" class="button-primary" data-trip-action="finalize-trip"><i data-lucide="check-circle"></i> Finalizar viagem</button>') + '<button type="button" class="button-secondary" data-trip-action="trip-report"><i data-lucide="file-down"></i> Relatório PDF</button>' + ((!trip.manifestName || !trip.manifestData) ? '<button type="button" class="button-primary" data-trip-action="add-manifest"><i data-lucide="file-plus-2"></i> ' + (trip.manifestName ? 'Atualizar manifesto' : 'Adicionar manifesto') + '</button><input type="file" data-trip-manifest-later accept=".pdf,.xlsx,.xls,.csv,.xml,.jpg,.jpeg,.png" hidden>' : '') + '<button type="button" class="button-danger" data-trip-action="delete-trip"><i data-lucide="trash-2"></i> Excluir viagem</button></div></div>' +
         '<section class="vehicle-trip-details-panel"><div class="vehicle-trip-details-heading"><div><span class="vehicle-trip-detail-kicker">DADOS DA VIAGEM</span><h2>' + escapeHTML(trip.driver || "Motorista não informado") + '</h2><p>Placa: ' + escapeHTML(trip.plate || "—") + ' <span>•</span> Data: ' + escapeHTML(dateLabel(trip.tripDate)) + '</p></div><span class="vehicle-trip-details-file"><i data-lucide="file-check-2"></i> ' + escapeHTML(trip.manifestName || "Manifesto não anexado") + '</span></div><div class="vehicle-trip-metrics">' + metricHtml + '</div><div class="vehicle-trip-detail-section"><h3><i data-lucide="map-pin"></i> Cidades destinatárias</h3>' + cityHtml + '</div><div class="vehicle-trip-detail-section vehicle-trip-operational-code"><h3><i data-lucide="file-text"></i> Manifesto operacional</h3><strong>' + dash(data.operationalManifest) + '</strong></div>' +
         '<section class="vehicle-trip-detail-section"><div class="vehicle-trip-table-heading"><div><h3><i data-lucide="files"></i> CT-es identificados</h3><p>Expanda somente quando precisar conferir os documentos.</p></div><span>' + cteRows.length + ' CT-e(s)</span></div><details class="vehicle-trip-cte-disclosure"><summary>Ver CT-es identificados</summary>' + (cteRows.length ? '<div class="vehicle-trip-table-wrap"><table class="vehicle-trip-cte-table"><thead><tr><th>CT-e</th><th>Cidade</th><th>Peso (kg)</th><th>QVOL</th><th>Val. frete</th></tr></thead><tbody>' + rowHtml + '</tbody></table></div>' : '<p class="vehicle-trip-no-data">Não foi possível separar os CT-es individuais deste arquivo. Os dados gerais identificados continuam disponíveis acima.</p>') + '</details></section>' +
         '<section class="vehicle-trip-detail-section"><h3><i data-lucide="gauge"></i> Quilometragem e pagamento do veículo</h3>' + (isFinalized ? '<p class="vehicle-trip-locked-note">Esta viagem foi finalizada. Os dados estão bloqueados para edição.</p>' : '') + '<form id="tripCostsForm" class="vehicle-trip-cost-form"' + (isFinalized ? ' hidden' : '') + '><label class="form-field">Valor pago ao veículo (R$)<input type="number" name="vehiclePay" min="0" step="0.01" value="' + (trip.vehiclePay ?? "") + '" placeholder="0,00"></label><label class="form-field">KM de saída<input type="number" name="startKm" min="0" step="1" value="' + (trip.startKm ?? "") + '" placeholder="Ex.: 125000"></label><label class="form-field">KM de retorno<input type="number" name="returnKm" min="0" step="1" value="' + (trip.returnKm ?? "") + '" placeholder="Ex.: 125650"></label><div class="vehicle-trip-cost-form-actions"><button class="button-primary" type="submit"><i data-lucide="save"></i> Salvar dados</button></div></form><div class="vehicle-trip-cost-summary"><div><span>Distância percorrida</span><strong>' + (tripKm > 0 ? formatManifestNumber(tripKm, 0) + ' km' : '—') + '</strong></div><div><span>Custos extras</span><strong>' + money(totalExtras) + '</strong></div><div><span>Custo total registrado</span><strong>' + money(totalCost) + '</strong></div><div><span>Resultado estimado do frete</span><strong>' + money(result) + '</strong></div></div></section>' +
@@ -1310,6 +1310,43 @@ document.addEventListener("DOMContentLoaded", () => {
                     renderVehicleTripsPage(false, selectedTrip.id);
                 });
                 $("[data-trip-action='trip-report']", expensesPage)?.addEventListener("click", () => generateVehicleTripReport(selectedTrip));
+                const addManifestButton = $("[data-trip-action='add-manifest']", expensesPage);
+                const laterManifestInput = $("[data-trip-manifest-later]", expensesPage);
+                addManifestButton?.addEventListener("click", () => laterManifestInput?.click());
+                laterManifestInput?.addEventListener("change", async () => {
+                    const file = laterManifestInput.files?.[0];
+                    if (!file) return;
+                    addManifestButton.disabled = true;
+                    addManifestButton.innerHTML = '<i data-lucide="loader-circle"></i> Lendo manifesto...';
+                    refreshIcons();
+                    try {
+                        const extractedText = await readManifestFile(file);
+                        const parsedData = parseManifestData(extractedText);
+                        const foundAnyData = parsedData.totalCtes || parsedData.totalWeight !== null || parsedData.totalVolumes !== null || parsedData.totalFreight !== null || parsedData.operationalManifest || parsedData.cteRows.length;
+                        if (!foundAnyData) throw new Error("Não encontrei os campos esperados neste manifesto. Confira se o arquivo contém os dados operacionais no padrão esperado.");
+                        const previousName = selectedTrip.manifestName;
+                        const previousData = selectedTrip.manifestData;
+                        selectedTrip.manifestName = file.name;
+                        selectedTrip.manifestData = parsedData;
+                        if (!persistVehicleTrips()) {
+                            selectedTrip.manifestName = previousName;
+                            selectedTrip.manifestData = previousData;
+                            return;
+                        }
+                        if (selectedTrip.finalizedAt) updateDashboard();
+                        showToast("Manifesto adicionado à viagem com sucesso.");
+                        renderVehicleTripsPage(false, selectedTrip.id);
+                    } catch (error) {
+                        console.error("Erro ao adicionar manifesto à viagem:", error);
+                        showToast(error.message || "Não foi possível ler o manifesto selecionado.");
+                    } finally {
+                        if (addManifestButton.isConnected) {
+                            addManifestButton.disabled = false;
+                            addManifestButton.innerHTML = '<i data-lucide="file-plus-2"></i> Adicionar manifesto';
+                            refreshIcons();
+                        }
+                    }
+                });
                 const tripCostsForm = $("#tripCostsForm", expensesPage);
                 tripCostsForm?.addEventListener("submit", (event) => {
                     event.preventDefault();
