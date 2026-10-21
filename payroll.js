@@ -138,6 +138,24 @@
             catch(error){apiRecordsError=error?.message||"Não foi possível gerar as parcelas automáticas.";}
         }
     }
+    const style = document.createElement("style");
+    style.textContent = `
+        .payroll-modal-backdrop{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(3,9,22,.78);backdrop-filter:blur(6px)}
+        .payroll-modal-card{width:min(100%,480px);padding:28px;border:1px solid rgba(100,145,210,.25);border-radius:20px;background:#0d1729;color:#edf4ff;box-shadow:0 24px 80px rgba(0,0,0,.45)}
+        .payroll-modal-icon{display:grid;place-items:center;width:48px;height:48px;border-radius:14px;background:rgba(48,113,225,.16);color:#69a2ff;margin-bottom:18px}
+        .payroll-modal-card h2{margin:0 0 8px;font-size:22px;color:#f4f7ff}
+        .payroll-modal-card>p{margin:0 0 20px;color:#aab9d0;line-height:1.55}
+        .payroll-modal-summary{display:grid;grid-template-columns:1fr auto;gap:8px 14px;padding:15px;margin-bottom:20px;border:1px solid rgba(130,160,205,.16);border-radius:12px;background:rgba(255,255,255,.025)}
+        .payroll-modal-summary span,.payroll-modal-card small{color:#91a4c0;font-size:12px}
+        .payroll-modal-summary strong{text-align:right;color:#eaf1ff}
+        .payroll-modal-card form>label{display:grid;gap:8px;font-weight:600;color:#dce7f8}
+        .payroll-modal-card input[type=date]{width:100%;min-height:44px;padding:10px 12px;border:1px solid #304563;border-radius:10px;background:#081222;color:#f4f7ff;color-scheme:dark;font:inherit}
+        .payroll-modal-card small{font-weight:400;line-height:1.5}
+        .payroll-modal-card .payroll-form-actions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:22px}
+        .payroll-modal-error{margin:12px 0 0;color:#ff9c9c;font-size:13px}
+        @media(max-width:520px){.payroll-modal-card{padding:22px 18px}.payroll-modal-card .payroll-form-actions>*{flex:1}}
+    `;
+    if(!document.querySelector("[data-payroll-modal-styles]")){style.setAttribute("data-payroll-modal-styles","");document.head.appendChild(style);}
     function render(target){ host=target; if(host) { draw(); syncAll().then(()=>ensureAutomaticPayroll()).then(()=>{ if(host) draw(); }); } }
     function draw(){
         if(!host)return;
@@ -426,15 +444,39 @@
             }catch(error){alert(error.message||"Não foi possível registrar o pagamento no backend.");}
             finally{if(submit){submit.disabled=false;submit.textContent="Registrar pagamento";}}
         });
-        host.querySelectorAll("[data-p-paid]").forEach(b=>b.addEventListener("click",async()=>{
+        host.querySelectorAll("[data-p-paid]").forEach(b=>b.addEventListener("click",()=>{
             if(!window.PRIMEAuth)return;
-            const paidAt=prompt("Informe a data real do pagamento (AAAA-MM-DD):",today());if(paidAt===null)return;
-            if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(paidAt.trim())){alert("Data inválida. Use AAAA-MM-DD.");return;}
-            if(!confirm("Confirmar que o pagamento foi realizado em "+paidAt+"?"))return;
-            try{
-                await window.PRIMEAuth.requestCompany("/payroll/payments/"+encodeURIComponent(b.dataset.pPaid),{method:"PATCH",body:JSON.stringify({status:"pago",paid_at:paidAt.trim()})});
-                await syncRemoteRecords();draw();
-            }catch(error){alert(error.message||"Não foi possível atualizar o pagamento.");}
+            host.querySelector("[data-p-payment-modal]")?.remove();
+            const payment=data.payments.find(item=>String(item.id)===String(b.dataset.pPaid));
+            if(!payment)return;
+            const modal=document.createElement("div");
+            modal.setAttribute("data-p-payment-modal","");
+            modal.innerHTML='<div class="payroll-modal-backdrop" data-p-modal-close><section class="payroll-modal-card" role="dialog" aria-modal="true" aria-labelledby="p-payment-modal-title"><div class="payroll-modal-icon"><i data-lucide="calendar-check"></i></div><h2 id="p-payment-modal-title">Confirmar pagamento</h2><p>Informe quando o dinheiro realmente saiu da conta. Essa data será usada nos indicadores financeiros.</p><div class="payroll-modal-summary"><span>Colaborador</span><strong>'+esc(employeeById(payment.employeeId)?.name||"Colaborador")+'</strong><span>Valor do pagamento</span><strong>'+money(payment.amount)+'</strong></div><form data-p-paid-form><label>Data real do pagamento<input type="date" name="paidAt" required value="'+today()+'" max="'+today()+'"><small>Selecione a data no calendário. O sistema salvará no formato correto automaticamente.</small></label><div class="payroll-form-actions"><button type="button" class="button-secondary" data-p-modal-cancel>Cancelar</button><button type="submit" class="button-primary">Confirmar como pago</button></div><p class="payroll-modal-error" data-p-modal-error hidden></p></form></section></div>';
+            host.appendChild(modal);
+            if(window.lucide)window.lucide.createIcons();
+            const form=modal.querySelector("[data-p-paid-form]");
+            const close=()=>modal.remove();
+            modal.querySelector("[data-p-modal-close]")?.addEventListener("click",event=>{if(event.target===event.currentTarget)close();});
+            modal.querySelector("[data-p-modal-cancel]")?.addEventListener("click",close);
+            form.addEventListener("submit",async event=>{
+                event.preventDefault();
+                const paidAt=String(new FormData(form).get("paidAt")||"").trim();
+                const date=new Date(paidAt+"T12:00:00");
+                const error=modal.querySelector("[data-p-modal-error]");
+                if(!/^\\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])$/.test(paidAt)||Number.isNaN(date.getTime())||date.toISOString().slice(0,10)!==paidAt){
+                    error.textContent="Selecione uma data válida.";error.hidden=false;return;
+                }
+                const submit=form.querySelector('button[type="submit"]');
+                submit.disabled=true;submit.textContent="Salvando...";
+                try{
+                    await window.PRIMEAuth.requestCompany("/payroll/payments/"+encodeURIComponent(payment.id),{method:"PATCH",body:JSON.stringify({status:"pago",paid_at:paidAt})});
+                    await syncRemoteRecords();draw();
+                }catch(err){
+                    error.textContent=err?.message||"Não foi possível atualizar o pagamento.";
+                    error.hidden=false;submit.disabled=false;submit.textContent="Confirmar como pago";
+                }
+            });
+            form.querySelector('[name="paidAt"]')?.focus();
         }));
         host.querySelectorAll("[data-p-edit]").forEach(b=>b.addEventListener("click",async()=>{
             const p=data.payments.find(item=>String(item.id)===String(b.dataset.pEdit));
