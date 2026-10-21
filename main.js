@@ -2358,6 +2358,7 @@ document.addEventListener("DOMContentLoaded", () => {
             company: "",
             taxId: "",
             expenseType: "variable",
+            repeatMonths: 12,
             totalAmount: "",
             installmentCount: 1,
             firstDate: todayISO,
@@ -2448,6 +2449,13 @@ document.addEventListener("DOMContentLoaded", () => {
                                     <option value="variable">Variável</option>
                                     <option value="fixed">Fixa</option>
                                 </select>
+                            </label>
+
+                            <label class="form-field" id="repeatMonthsField" hidden>
+                                Repetir por quantos meses? *
+                                <input name="repeatMonths" type="number" min="1"
+                                    max="120" step="1" value="12">
+                                <small class="field-hint">O PRIME criará uma ocorrência por mês, com o mesmo valor e vencimento no mesmo dia (ou no último dia do mês, quando necessário).</small>
                             </label>
 
                             <label class="form-field">
@@ -3036,13 +3044,21 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!form) return;
 
         const isInstallmentSelect = form.elements.isInstallment;
+        const expenseTypeSelect = form.elements.expenseType;
+        const repeatMonthsField = $("#repeatMonthsField", form);
         const countField = $("#installmentCountField", form);
         const scheduleBox = $("#expenseScheduleBox", form);
         const fixedDayField = $("#fixedDayField", form);
         const differentDatesFields = $("#differentDatesFields", form);
 
         function updateInstallmentVisibility() {
-            const isInstallment = isInstallmentSelect.value === "yes";
+            const isFixed = expenseTypeSelect.value === "fixed";
+            const isInstallment = !isFixed && isInstallmentSelect.value === "yes";
+
+            repeatMonthsField.hidden = !isFixed;
+            form.elements.repeatMonths.required = isFixed;
+            isInstallmentSelect.disabled = isFixed;
+            if (isFixed) isInstallmentSelect.value = "no";
 
             countField.hidden = !isInstallment;
             scheduleBox.hidden = !isInstallment;
@@ -3110,6 +3126,7 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         isInstallmentSelect.addEventListener("change", updateInstallmentVisibility);
+        expenseTypeSelect.addEventListener("change", updateInstallmentVisibility);
 
         form.elements.installmentCount.addEventListener("input", () => {
             if (
@@ -3226,7 +3243,9 @@ document.addEventListener("DOMContentLoaded", () => {
         const expenseType = String(formData.get("expenseType") || "variable");
         const totalAmount = Number(formData.get("totalAmount"));
         const firstDate = String(formData.get("firstDate") || "");
-        const isInstallment = formData.get("isInstallment") === "yes";
+        const isFixed = expenseType === "fixed";
+        const repeatMonths = isFixed ? Number(formData.get("repeatMonths")) : 1;
+        const isInstallment = !isFixed && formData.get("isInstallment") === "yes";
 
         const installmentCount = isInstallment
             ? Number(formData.get("installmentCount"))
@@ -3245,6 +3264,55 @@ document.addEventListener("DOMContentLoaded", () => {
 
         if (!["fixed", "variable"].includes(expenseType)) {
             showToast("Selecione o tipo de despesa.");
+            return;
+        }
+
+        if (isFixed && (!Number.isInteger(repeatMonths) || repeatMonths < 1 || repeatMonths > 120)) {
+            showToast("Informe por quantos meses a despesa fixa deve se repetir (de 1 a 120).");
+            return;
+        }
+
+        if (isFixed) {
+            const fixedDay = Number(firstDate.slice(8, 10));
+            const createdAt = new Date().toISOString();
+            const recurringExpenses = Array.from({ length: repeatMonths }, (_, index) => {
+                const dueDate = addMonthsKeepingDay(firstDate, index, fixedDay);
+                const installmentId = `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`;
+                return {
+                    id: `${Date.now()}-${index}-${Math.random().toString(36).slice(2, 9)}`,
+                    name,
+                    company,
+                    taxId,
+                    expenseType: "fixed",
+                    totalAmount: Math.round(totalAmount * 100) / 100,
+                    installmentCount: 1,
+                    recurringGroupId: `recurring-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                    recurrenceIndex: index + 1,
+                    recurrenceCount: repeatMonths,
+                    createdAt,
+                    installments: [{
+                        id: installmentId,
+                        number: 1,
+                        label: `Recorrência ${index + 1}/${repeatMonths}`,
+                        date: dueDate,
+                        amount: Math.round(totalAmount * 100) / 100,
+                        paid: false,
+                        paidAt: null
+                    }]
+                };
+            });
+
+            variableExpenses.push(...recurringExpenses);
+            if (!persistVariableExpenses()) {
+                const createdIds = new Set(recurringExpenses.map((item) => item.id));
+                variableExpenses = variableExpenses.filter((item) => !createdIds.has(item.id));
+                return;
+            }
+
+            closeExpenseForm();
+            renderVariableExpensesPage();
+            updateDashboard();
+            showToast(`Despesa fixa cadastrada para ${repeatMonths} ${repeatMonths === 1 ? "mês" : "meses"}.`);
             return;
         }
 
