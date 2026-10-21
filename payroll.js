@@ -20,7 +20,12 @@
     function mapRemoteEmployee(e) {
         return { id:e.id, name:e.name, taxId:e.tax_id||"", type:e.employment_type||"CLT",
             role:e.role||"", department:e.department||"", costCenter:e.cost_center||"",
-            startDate:e.start_date, salary:Number(e.salary||0), status:e.is_active?"ativo":"inativo",
+            phone:e.phone||"", address:e.address||"", addressNumber:e.address_number||"",
+            postalCode:e.postal_code||"", city:e.city||"", state:e.state||"",
+            maritalStatus:e.marital_status||"", startDate:e.start_date||"", contractEndDate:e.contract_end_date||"",
+            salary:Number(e.salary||0), salarySplit:Boolean(e.salary_split),
+            salaryDay5Amount:Number(e.salary_day5_amount||0), salaryDay20Amount:Number(e.salary_day20_amount||0),
+            integralPaymentDay:e.integral_payment_day||"", status:e.is_active?"ativo":"inativo",
             createdAt:e.created_at, source:"api" };
     }
     async function syncRemoteEmployees() {
@@ -118,10 +123,33 @@
     function employeeView(){
         const editingEmployee = editingEmployeeId ? allEmployees().find(e=>String(e.id)===String(editingEmployeeId)) : null;
         const selected = (actual, expected) => String(actual ?? "") === String(expected ?? "") ? " selected" : "";
-        return '<div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>'+(editingEmployee?'Editar colaborador':'Novo colaborador')+'</h2><p>'+(editingEmployee?'Atualize os dados do cadastro existente. O histórico da folha e dos pagamentos será preservado.':'Novos cadastros são enviados à API autenticada da transportadora. Não informe dados bancários nesta etapa.')+'</p></div></div>'+
-        '<form class="payroll-form" id="p-employee"><label>Nome completo<input name="name" required maxlength="140" value="'+esc(editingEmployee?.name||"")+'"></label><label>CPF/CNPJ (opcional)<input name="taxId" maxlength="24" value="'+esc(editingEmployee?.taxId||"")+'"></label><label>Vínculo<select name="type"><option'+selected(editingEmployee?.type,"CLT")+'>CLT</option><option'+selected(editingEmployee?.type,"PJ")+'>PJ</option><option value="outro"'+selected(editingEmployee?.type,"outro")+'>Outro</option></select></label><label>Cargo/função<input name="role" maxlength="100" value="'+esc(editingEmployee?.role||"")+'"></label><label>Setor<input name="department" maxlength="100" value="'+esc(editingEmployee?.department||"")+'"></label><label>Centro de custo<input name="costCenter" maxlength="100" value="'+esc(editingEmployee?.costCenter||"")+'"></label><label>Início do vínculo<input type="date" name="startDate" required value="'+esc(editingEmployee?.startDate||today())+'"></label><label>Remuneração mensal (R$)<input type="number" name="salary" min="0" step="0.01" required value="'+esc(editingEmployee ? editingEmployee.salary : 0)+'"></label><label>Situação<select name="status"><option value="ativo"'+selected(editingEmployee?.status,"ativo")+'>Ativo</option><option value="inativo"'+selected(editingEmployee?.status,"inativo")+'>Inativo</option></select></label><div class="payroll-form-actions"><button class="button-primary" type="submit">'+(editingEmployee?'Salvar alterações':'Salvar funcionário')+'</button>'+(editingEmployee?'<button class="button-secondary" type="button" data-p-employee-cancel>Cancelar</button>':'')+'</div></form></div>'+
+        const split = Boolean(editingEmployee?.salarySplit);
+        const integralDay = editingEmployee?.integralPaymentDay || "5o_dia_util";
+        return '<div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>'+(editingEmployee?'Editar colaborador':'Novo colaborador')+'</h2><p>'+(editingEmployee?'Atualize os dados do cadastro existente. O histórico da folha e dos pagamentos será preservado.':'Preencha os dados pessoais, contratuais e a programação de pagamento do colaborador.')+'</p></div></div>'+
+        '<form class="payroll-form" id="p-employee">'+
+        '<label>Nome completo<input name="name" required maxlength="180" value="'+esc(editingEmployee?.name||"")+'"></label>'+
+        '<label>CPF ou CNPJ<input name="taxId" maxlength="20" value="'+esc(editingEmployee?.taxId||"")+'" placeholder="Digite CPF ou CNPJ"></label>'+
+        '<label>Telefone<input name="phone" maxlength="30" value="'+esc(editingEmployee?.phone||"")+'" placeholder="(00) 00000-0000"></label>'+
+        '<label>Estado civil<select name="maritalStatus"><option value="">Selecione</option><option value="solteiro"'+selected(editingEmployee?.maritalStatus,"solteiro")+'>Solteiro(a)</option><option value="casado"'+selected(editingEmployee?.maritalStatus,"casado")+'>Casado(a)</option><option value="viuvo"'+selected(editingEmployee?.maritalStatus,"viuvo")+'>Viúvo(a)</option><option value="divorciado"'+selected(editingEmployee?.maritalStatus,"divorciado")+'>Divorciado(a)</option><option value="separado"'+selected(editingEmployee?.maritalStatus,"separado")+'>Separado(a)</option></select></label>'+
+        '<label>Endereço<input name="address" maxlength="180" value="'+esc(editingEmployee?.address||"")+'" placeholder="Rua, avenida, etc."></label>'+
+        '<label>Número do endereço<input name="addressNumber" maxlength="30" value="'+esc(editingEmployee?.addressNumber||"")+'"></label>'+
+        '<label>CEP<input name="postalCode" maxlength="9" value="'+esc(editingEmployee?.postalCode||"")+'" placeholder="00000-000"></label>'+
+        '<label>Cidade<input name="city" maxlength="100" value="'+esc(editingEmployee?.city||"")+'"></label>'+
+        '<label>Estado (UF)<input name="state" maxlength="2" value="'+esc(editingEmployee?.state||"")+'" placeholder="PR"></label>'+
+        '<label>Cargo<input name="role" maxlength="120" value="'+esc(editingEmployee?.role||"")+'"></label>'+
+        '<label>Setor<input name="department" maxlength="100" value="'+esc(editingEmployee?.department||"")+'"></label>'+
+        '<label>Centro de custo<input name="costCenter" maxlength="100" value="'+esc(editingEmployee?.costCenter||"")+'"></label>'+
+        '<label>Vínculo<select name="type"><option value="CLT"'+selected(editingEmployee?.type,"CLT")+'>CLT</option><option value="PJ"'+selected(editingEmployee?.type,"PJ")+'>PJ</option><option value="Temporário"'+selected(editingEmployee?.type,"Temporário")+'>Temporário</option><option value="Estágio"'+selected(editingEmployee?.type,"Estágio")+'>Estágio</option><option value="Outro"'+selected(editingEmployee?.type,"Outro")+'>Outro</option></select></label>'+
+        '<label>Início do contrato<input type="date" name="startDate" required value="'+esc(editingEmployee?.startDate||today())+'"></label>'+
+        '<label>Fim do contrato (se dispensado)<input type="date" name="contractEndDate" value="'+esc(editingEmployee?.contractEndDate||"")+'"></label>'+
+        '<label>Remuneração mensal (R$)<input type="number" name="salary" min="0" step="0.01" required value="'+esc(editingEmployee ? editingEmployee.salary : 0)+'"></label>'+
+        '<label>Dividir o salário em 5º dia útil e dia 20?<select name="salarySplit"><option value="nao"'+selected(split,false)+'>Não — pagamento integral</option><option value="sim"'+selected(split,true)+'>Sim — dividir em duas parcelas</option></select></label>'+
+        '<div data-salary-split-fields style="'+(split?"":"display:none;")+'"><label>Valor pago no 5º dia útil (R$)<input type="number" name="salaryDay5Amount" min="0" step="0.01" value="'+esc(editingEmployee?.salaryDay5Amount??0)+'"></label><label>Valor pago no dia 20 (R$)<input type="number" name="salaryDay20Amount" min="0" step="0.01" value="'+esc(editingEmployee?.salaryDay20Amount??0)+'"></label><p class="payroll-muted">A soma das duas parcelas deve ser igual à remuneração mensal.</p></div>'+
+        '<div data-integral-payment-fields style="'+(split?"display:none;":"")+'"><label>Quando será pago o salário integral?<select name="integralPaymentDay"><option value="5o_dia_util"'+selected(integralDay,"5o_dia_util")+'>5º dia útil</option><option value="dia_20"'+selected(integralDay,"dia_20")+'>Dia 20</option><option value="ultimo_dia_util"'+selected(integralDay,"ultimo_dia_util")+'>Último dia útil do mês</option><option value="dia_30"'+selected(integralDay,"dia_30")+'>Dia 30</option><option value="outro"'+selected(integralDay,"outro")+'>Outro dia</option></select></label><label data-integral-other-field style="'+(integralDay==="outro"?"":"display:none;")+'">Informe o dia ou regra de pagamento<input name="integralPaymentDayOther" maxlength="40" value="'+esc(integralDay==="outro"?"":(editingEmployee?.integralPaymentDay||""))+'" placeholder="Ex.: todo dia 10"></label></div>'+
+        '<label>Situação do cadastro<select name="status"><option value="ativo"'+selected(editingEmployee?.status,"ativo")+'>Ativo</option><option value="inativo"'+selected(editingEmployee?.status,"inativo")+'>Inativo</option></select></label>'+
+        '<div class="payroll-form-actions"><button class="button-primary" type="submit">'+(editingEmployee?'Salvar alterações':'Salvar funcionário')+'</button>'+(editingEmployee?'<button class="button-secondary" type="button" data-p-employee-cancel>Cancelar</button>':'')+'</div></form></div>'+
         '<div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>Colaboradores cadastrados</h2><p>'+allEmployees().length+' registro(s), incluindo inativos.</p></div></div>'+
-        (allEmployees().length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Nome</th><th>Vínculo</th><th>Função/setor</th><th>Remuneração</th><th>Situação</th><th>Origem</th><th>Ações</th></tr></thead><tbody>'+allEmployees().map(e=>'<tr><td><strong>'+esc(e.name)+'</strong><small>'+esc(e.taxId||"Documento não informado")+'</small></td><td>'+esc(e.type)+'</td><td>'+esc(e.role||"—")+'<small>'+esc(e.department||"—")+'</small></td><td>'+money(e.salary)+'</td><td>'+esc(e.status)+'</td><td>'+((e.source==="api")?"Backend":"Local (legado)")+'</td><td style="min-width:190px;white-space:normal"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button type="button" class="button-secondary payroll-small-button" data-p-employee-edit="'+esc(e.id)+'">Editar</button><button type="button" class="button-secondary payroll-small-button" '+(e.source==="api"?'data-p-api-toggle="'+esc(e.id)+'"':'data-p-toggle="'+esc(e.id)+'"')+'>'+(e.status==="ativo"?"Inativar":"Reativar")+'</button></div></td></tr>').join('')+'</tbody></table></div>':'<div class="payroll-empty">Nenhum colaborador cadastrado.</div>')+'</div>';
+        (allEmployees().length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Nome</th><th>Vínculo</th><th>Função/setor</th><th>Remuneração</th><th>Pagamento</th><th>Situação</th><th>Ações</th></tr></thead><tbody>'+allEmployees().map(e=>'<tr><td><strong>'+esc(e.name)+'</strong><small>'+esc(e.taxId||"Documento não informado")+'</small><small>'+esc(e.phone||"Telefone não informado")+'</small></td><td>'+esc(e.type)+'</td><td>'+esc(e.role||"—")+'<small>'+esc(e.department||"—")+'</small></td><td>'+money(e.salary)+'</td><td>'+esc(e.salarySplit?("5º útil: "+money(e.salaryDay5Amount)+" / Dia 20: "+money(e.salaryDay20Amount)):(e.integralPaymentDay==="5o_dia_util"?"5º dia útil":e.integralPaymentDay==="dia_20"?"Dia 20":e.integralPaymentDay==="ultimo_dia_util"?"Último dia útil":e.integralPaymentDay==="dia_30"?"Dia 30":e.integralPaymentDay||"Não definido"))+'</td><td>'+esc(e.status)+'</td><td style="min-width:190px;white-space:normal"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button type="button" class="button-secondary payroll-small-button" data-p-employee-edit="'+esc(e.id)+'">Editar</button><button type="button" class="button-secondary payroll-small-button" '+(e.source==="api"?'data-p-api-toggle="'+esc(e.id)+'"':'data-p-toggle="'+esc(e.id)+'"')+'>'+(e.status==="ativo"?"Inativar":"Reativar")+'</button></div></td></tr>').join('')+'</tbody></table></div>':'<div class="payroll-empty">Nenhum colaborador cadastrado.</div>')+'</div>';
     }
     function periodView(p){
         if(!p)return '<div class="payroll-toolbar"><label>Competência <input type="month" data-p-month value="'+esc(month)+'"></label></div><div class="payroll-panel"><h2>Preparar competência</h2><p class="payroll-muted">Adicione rubricas manuais. Nenhuma alíquota legal será presumida.</p><button type="button" class="button-primary" data-p-create>Criar folha da competência</button></div>';
@@ -136,17 +164,58 @@
         (data.payments.length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Competência</th><th>Funcionário</th><th>Tipo</th><th>Vencimento</th><th>Valor</th><th>Status</th><th>Ações</th></tr></thead><tbody>'+[...data.payments].sort((a,b)=>(b.dueDate||"").localeCompare(a.dueDate||"")).map(p=>'<tr><td>'+esc(p.month)+'</td><td>'+esc(employeeById(p.employeeId)?.name||"Colaborador")+'</td><td>'+esc(p.type)+'</td><td>'+esc(p.dueDate)+'</td><td>'+money(p.amount)+'</td><td>'+esc(p.status)+'</td><td style="min-width:220px;white-space:normal"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">' +(p.status!=="pago"?'<button type="button" class="button-secondary payroll-small-button" data-p-paid="'+esc(p.id)+'">Marcar pago</button>':'<button type="button" class="button-secondary payroll-small-button" data-p-reverse="'+esc(p.id)+'">Estornar</button>')+'<button type="button" class="button-secondary payroll-small-button" data-p-edit="'+esc(p.id)+'">Editar</button><button type="button" class="button-secondary payroll-small-button" data-p-delete="'+esc(p.id)+'">Excluir</button></div></td></tr>').join('')+'</tbody></table></div>':'<div class="payroll-empty">Nenhum pagamento registrado.</div>')+'</div>';
     }
     function bindForms(){
-        $("#p-employee",host)?.addEventListener("submit", async e=>{
+        const employeeForm=$("#p-employee",host);
+        employeeForm?.querySelector('[name="salarySplit"]')?.addEventListener("change",e=>{
+            const split=e.currentTarget.value==="sim";
+            const splitFields=employeeForm.querySelector("[data-salary-split-fields]");
+            const integralFields=employeeForm.querySelector("[data-integral-payment-fields]");
+            if(splitFields)splitFields.style.display=split?"":"none";
+            if(integralFields)integralFields.style.display=split?"none":"";
+        });
+        employeeForm?.querySelector('[name="integralPaymentDay"]')?.addEventListener("change",e=>{
+            const field=employeeForm.querySelector("[data-integral-other-field]");
+            if(field)field.style.display=e.currentTarget.value==="outro"?"":"none";
+        });
+        employeeForm?.querySelector('[name="state"]')?.addEventListener("input",e=>{e.currentTarget.value=e.currentTarget.value.toUpperCase().replace(/[^A-Z]/g,"").slice(0,2);});
+        employeeForm?.querySelector('[name="postalCode"]')?.addEventListener("input",e=>{
+            const digits=e.currentTarget.value.replace(/\\D/g,"").slice(0,8);
+            e.currentTarget.value=digits.length>5?digits.slice(0,5)+"-"+digits.slice(5):digits;
+        });
+        employeeForm?.addEventListener("submit", async e=>{
             e.preventDefault();
             const form=e.currentTarget, submit=form.querySelector('button[type="submit"]'), f=new FormData(form);
             const name=String(f.get("name")||"").trim();
             if(!name || !window.PRIMEAuth) return;
+            const salary=Number(f.get("salary")||0), salarySplit=String(f.get("salarySplit")||"nao")==="sim";
+            const day5=salarySplit?Number(f.get("salaryDay5Amount")||0):0;
+            const day20=salarySplit?Number(f.get("salaryDay20Amount")||0):0;
+            if(salarySplit && Math.round((day5+day20)*100)!==Math.round(salary*100)){
+                alert("A soma do 5º dia útil e do dia 20 deve ser igual à remuneração mensal.");
+                return;
+            }
+            const integralChoice=String(f.get("integralPaymentDay")||"5o_dia_util");
+            const integralDay=salarySplit?null:(integralChoice==="outro"?String(f.get("integralPaymentDayOther")||"").trim():integralChoice);
+            if(!salarySplit && !integralDay){alert("Informe o dia do pagamento integral.");return;}
+            const startDate=String(f.get("startDate")||"");
+            const contractEndDate=String(f.get("contractEndDate")||"")||null;
+            if(contractEndDate && contractEndDate<startDate){alert("O fim do contrato não pode ser anterior ao início.");return;}
             if(submit){submit.disabled=true;submit.textContent=editingEmployeeId?"Salvando alterações...":"Salvando...";}
             const payload={
                 name, tax_id:String(f.get("taxId")||"").trim()||null,
-                employment_type:String(f.get("type")||"CLT"), role:String(f.get("role")||"").trim()||null,
-                department:String(f.get("department")||"").trim()||null, cost_center:String(f.get("costCenter")||"").trim()||null,
-                start_date:String(f.get("startDate")), salary:Number(f.get("salary")||0),
+                phone:String(f.get("phone")||"").trim()||null,
+                address:String(f.get("address")||"").trim()||null,
+                address_number:String(f.get("addressNumber")||"").trim()||null,
+                postal_code:String(f.get("postalCode")||"").trim()||null,
+                city:String(f.get("city")||"").trim()||null,
+                state:String(f.get("state")||"").trim().toUpperCase()||null,
+                marital_status:String(f.get("maritalStatus")||"")||null,
+                employment_type:String(f.get("type")||"CLT"),
+                role:String(f.get("role")||"").trim()||null,
+                department:String(f.get("department")||"").trim()||null,
+                cost_center:String(f.get("costCenter")||"").trim()||null,
+                start_date:startDate, contract_end_date:contractEndDate,
+                salary, salary_split:salarySplit, salary_day5_amount:day5,
+                salary_day20_amount:day20, integral_payment_day:integralDay,
                 is_active:String(f.get("status")||"ativo")==="ativo"
             };
             try{
