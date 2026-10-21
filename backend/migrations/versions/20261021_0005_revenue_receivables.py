@@ -72,6 +72,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["company_id"], ["companies.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["revenue_id"], ["revenues.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("company_id", "title_number", name="uq_receivable_titles_company_number"),
     )
     op.create_index("ix_receivable_titles_company_id", "receivable_titles", ["company_id"], unique=False)
     op.create_index("ix_receivable_titles_revenue_id", "receivable_titles", ["revenue_id"], unique=False)
@@ -91,6 +92,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["company_id"], ["companies.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["created_by"], ["users.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("company_id", "transaction_reference", name="uq_revenue_receipts_company_transaction"),
     )
     op.create_index("ix_revenue_receipts_company_id", "revenue_receipts", ["company_id"], unique=False)
     op.create_index("ix_revenue_receipts_company_payment_date", "revenue_receipts", ["company_id", "payment_date"], unique=False)
