@@ -330,7 +330,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const finalizedTrips = vehicleTrips.filter((trip) => {
             if (!trip.finalizedAt) return false;
-            return String(trip.finalizedAt || trip.tripDate || "").slice(0, 10) <= todayISO;
+            const finalizedDate = String(trip.finalizedAt).slice(0, 10);
+            const tripDate = String(trip.tripDate || "");
+            return finalizedDate <= todayISO && (!tripDate || tripDate <= todayISO);
         }).reduce((totals, trip) => {
             totals.revenue += Math.max(0, Number(trip.manifestData?.totalFreight) || 0);
             totals.expense += Math.max(0, Number(trip.vehiclePay) || 0);
