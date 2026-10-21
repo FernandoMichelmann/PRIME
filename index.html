@@ -13,7 +13,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap"
         rel="stylesheet">
 
-    <link rel="stylesheet" href="./prime.css?v=65464cc">
+    <link rel="stylesheet" href="./prime.css?v=dashboard-split-1">
 
     <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
@@ -22,7 +22,7 @@
     <script src="./users.js" defer></script>
     <script src="./revenue.js" defer></script>
     <script src="./revenue-navigation.js" defer></script>
-    <script src="./main.js" defer></script>
+    <script src="./main.js?v=dashboard-split-1" defer></script>
 </head>
 
 <body>
@@ -153,33 +153,57 @@
 
                     <article class="kpi-card">
                         <div class="kpi-top">
+                            <span>Saldo recebido</span>
+                            <span class="kpi-icon green-icon">
+                                <i data-lucide="circle-dollar-sign"></i>
+                            </span>
+                        </div>
+                        <div class="kpi-value" id="receivedValue">R$ 0,00</div>
+                        <div class="kpi-bottom" id="receivedStatus">
+                            <span class="status-neutral"><i data-lucide="minus"></i> Nenhum recebimento no mês</span>
+                            <span class="muted">Recebido no mês atual</span>
+                        </div>
+                    </article>
+
+                    <article class="kpi-card">
+                        <div class="kpi-top">
                             <span>Saldo a receber</span>
                             <span class="kpi-icon green-icon">
                                 <i data-lucide="arrow-down-left"></i>
                             </span>
                         </div>
                         <div class="kpi-value" id="receivableValue">R$ 0,00</div>
-                        <div class="kpi-bottom">
-                            <span class="status-neutral">
-                                <i data-lucide="minus"></i> Nenhuma fatura pendente
-                            </span>
+                        <div class="kpi-bottom" id="receivableStatus">
+                            <span class="status-neutral"><i data-lucide="minus"></i> Nenhuma fatura pendente</span>
                             <span class="muted">Contas em aberto</span>
                         </div>
                     </article>
 
                     <article class="kpi-card">
                         <div class="kpi-top">
-                            <span>Despesas do mês</span>
+                            <span>Despesas pagas</span>
                             <span class="kpi-icon red-icon">
-                                <i data-lucide="arrow-up-right"></i>
+                                <i data-lucide="circle-check"></i>
                             </span>
                         </div>
-                        <div class="kpi-value" id="expenseValue">R$ 0,00</div>
-                        <div class="kpi-bottom">
-                            <span class="status-neutral">
-                                <i data-lucide="minus"></i> Sem registros
+                        <div class="kpi-value" id="paidExpenseValue">R$ 0,00</div>
+                        <div class="kpi-bottom" id="paidExpenseStatus">
+                            <span class="status-neutral"><i data-lucide="minus"></i> Nenhum pagamento no mês</span>
+                            <span class="muted">Pago no mês atual</span>
+                        </div>
+                    </article>
+
+                    <article class="kpi-card">
+                        <div class="kpi-top">
+                            <span>Despesas a pagar</span>
+                            <span class="kpi-icon red-icon">
+                                <i data-lucide="clock-3"></i>
                             </span>
-                            <span class="muted">Mês atual</span>
+                        </div>
+                        <div class="kpi-value" id="unpaidExpenseValue">R$ 0,00</div>
+                        <div class="kpi-bottom" id="unpaidExpenseStatus">
+                            <span class="status-neutral"><i data-lucide="minus"></i> Nenhuma despesa pendente</span>
+                            <span class="muted">Compromissos do mês atual</span>
                         </div>
                     </article>
 
