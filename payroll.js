@@ -209,7 +209,7 @@
         '<label>Situação do cadastro<select name="status"><option value="ativo"'+selected(editingEmployee?.status,"ativo")+'>Ativo</option><option value="inativo"'+selected(editingEmployee?.status,"inativo")+'>Inativo</option></select></label>'+
         '<div class="payroll-form-actions"><button class="button-primary" type="submit">'+(editingEmployee?'Salvar alterações':'Salvar funcionário')+'</button>'+(editingEmployee?'<button class="button-secondary" type="button" data-p-employee-cancel>Cancelar</button>':'')+'</div></form></div>'+
         '<div class="payroll-panel"><div class="payroll-panel-heading"><div><h2>Colaboradores cadastrados</h2><p>'+allEmployees().length+' registro(s), incluindo inativos.</p></div></div>'+
-        (allEmployees().length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Nome</th><th>Vínculo</th><th>Função/setor</th><th>Remuneração</th><th>Pagamento</th><th>Situação</th><th>Ações</th></tr></thead><tbody>'+allEmployees().map(e=>'<tr><td><strong>'+esc(e.name)+'</strong><small>'+esc(e.taxId||"Documento não informado")+'</small><small>'+esc(e.phone||"Telefone não informado")+'</small></td><td>'+esc(e.type)+'</td><td>'+esc(e.role||"—")+'<small>'+esc(e.department||"—")+'</small></td><td>'+money(e.salary)+'</td><td>'+esc(e.salarySplit?("5º útil: "+money(e.salaryDay5Amount)+" / Dia 20: "+money(e.salaryDay20Amount)):(e.integralPaymentDay==="5o_dia_util"?"5º dia útil":e.integralPaymentDay==="dia_20"?"Dia 20":e.integralPaymentDay==="ultimo_dia_util"?"Último dia útil":e.integralPaymentDay==="dia_30"?"Dia 30":e.integralPaymentDay||"Não definido"))+'</td><td>'+esc(e.status)+'</td><td style="min-width:190px;white-space:normal"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button type="button" class="button-secondary payroll-small-button" data-p-employee-edit="'+esc(e.id)+'">Editar</button><button type="button" class="button-secondary payroll-small-button" '+(e.source==="api"?'data-p-api-toggle="'+esc(e.id)+'"':'data-p-toggle="'+esc(e.id)+'"')+'>'+(e.status==="ativo"?"Inativar":"Reativar")+'</button></div></td></tr>').join('')+'</tbody></table></div>':'<div class="payroll-empty">Nenhum colaborador cadastrado.</div>')+'</div>';
+        (allEmployees().length?'<div class="payroll-table-wrap"><table class="payroll-table"><thead><tr><th>Nome</th><th>Vínculo</th><th>Função/setor</th><th>Remuneração</th><th>Pagamento</th><th>Situação</th><th>Ações</th></tr></thead><tbody>'+allEmployees().map(e=>'<tr><td><strong>'+esc(e.name)+'</strong><small>'+esc(e.taxId||"Documento não informado")+'</small><small>'+esc(e.phone||"Telefone não informado")+'</small></td><td>'+esc(e.type)+'</td><td>'+esc(e.role||"—")+'<small>'+esc(e.department||"—")+'</small></td><td>'+money(e.salary)+'</td><td>'+esc(e.salarySplit?("5º útil: "+money(e.salaryDay5Amount)+" / Dia 20: "+money(e.salaryDay20Amount)):(e.integralPaymentDay==="5o_dia_util"?"5º dia útil":e.integralPaymentDay==="dia_20"?"Dia 20":e.integralPaymentDay==="ultimo_dia_util"?"Último dia útil":e.integralPaymentDay==="dia_30"?"Dia 30":e.integralPaymentDay||"Não definido"))+'</td><td>'+esc(e.status)+'</td><td style="min-width:190px;white-space:normal"><div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center"><button type="button" class="button-secondary payroll-small-button" data-p-employee-edit="'+esc(e.id)+'">Editar</button><button type="button" class="button-secondary payroll-small-button" data-p-employee-delete="'+esc(e.id)+'">Excluir</button></div></td></tr>').join('')+'</tbody></table></div>':'<div class="payroll-empty">Nenhum colaborador cadastrado.</div>')+'</div>';
     }
     function periodView(p){
         if(!p)return '<div class="payroll-toolbar"><label>Competência <input type="month" data-p-month value="'+esc(month)+'"></label></div><div class="payroll-panel"><h2>Preparando folha automática</h2><p class="payroll-muted">A competência será criada com as parcelas salariais dos funcionários ativos.</p></div>';
@@ -322,13 +322,20 @@
             draw();
             host.querySelector("#p-employee")?.scrollIntoView({behavior:"smooth",block:"start"});
         }));
-        host.querySelectorAll("[data-p-api-toggle]").forEach(b=>b.addEventListener("click",async()=>{
-            const employee=remoteEmployees.find(x=>x.id===b.dataset.pApiToggle); if(!employee||!window.PRIMEAuth)return;
-            const next=employee.status!=="ativo";
-            if(!confirm((next?"Reativar":"Inativar")+" este funcionário no backend?"))return;
+        host.querySelectorAll("[data-p-employee-delete]").forEach(b=>b.addEventListener("click",async()=>{
+            const employee=remoteEmployees.find(x=>String(x.id)===String(b.dataset.pEmployeeDelete));
+            if(!employee||!window.PRIMEAuth)return;
+            if(!confirm("Excluir o cadastro de "+employee.name+"? Se houver histórico de folha ou pagamentos, a exclusão será bloqueada para proteger os registros financeiros."))return;
             b.disabled=true;
-            try{await window.PRIMEAuth.requestCompany("/payroll/employees/"+encodeURIComponent(employee.id)+"/status?is_active="+String(next),{method:"PATCH"});await syncAll();draw();}
-            catch(error){alert(error.message||"Falha ao atualizar funcionário.");b.disabled=false;}
+            try{
+                await window.PRIMEAuth.requestCompany("/payroll/employees/"+encodeURIComponent(employee.id),{method:"DELETE"});
+                await syncAll();
+                draw();
+                alert("Cadastro do funcionário excluído.");
+            }catch(error){
+                alert(error.message||"Não foi possível excluir o funcionário. Cadastros com histórico financeiro devem ser preservados.");
+                b.disabled=false;
+            }
         }));
         host.querySelector("[data-p-create]")?.addEventListener("click",async()=>{
             if(period())return;
