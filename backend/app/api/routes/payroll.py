@@ -148,3 +148,189 @@ def set_employee_status(
     db.commit()
     db.refresh(employee)
     return employee
+
+
+# Competências e pagamentos: persistência no PostgreSQL, sempre no escopo da empresa.
+
+from app.models.payroll_period import PayrollPeriod
+from app.models.payroll_payment import PayrollPayment
+from app.schemas.payroll_records import (
+    PayrollPeriodCreate,
+    PayrollPeriodResponse,
+    PayrollPeriodUpdate,
+    PayrollPaymentCreate,
+    PayrollPaymentResponse,
+    PayrollPaymentUpdate,
+)
+
+
+def _validate_period_items(items: list[dict], company_id, db: Session) -> None:
+    employee_ids = {str(item["employee_id"]) for item in items}
+    if not employee_ids:
+        return
+    employees = db.scalars(
+        select(PayrollEmployee).where(
+            PayrollEmployee.company_id == company_id,
+            PayrollEmployee.id.in_(employee_ids),
+        )
+    ).all()
+    if {str(employee.id) for employee in employees} != employee_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Uma ou mais rubricas apontam para funcionários inexistentes nesta transportadora.",
+        )
+
+
+@router.get("/periods", response_model=list[PayrollPeriodResponse])
+def list_payroll_periods(
+    month: str | None = None,
+    membership=Depends(require_company_permission("payroll.read")),
+    db: Session = Depends(get_db),
+):
+    statement = select(PayrollPeriod).where(PayrollPeriod.company_id == membership.company_id)
+    if month is not None:
+        if len(month) != 7 or month[4:5] != "-" or not month[:4].isdigit() or not month[5:].isdigit() or not 1 <= int(month[5:]) <= 12:
+            raise HTTPException(status_code=422, detail="Competência deve estar no formato AAAA-MM.")
+        statement = statement.where(PayrollPeriod.month == month)
+    return list(db.scalars(statement.order_by(PayrollPeriod.month.desc())).all())
+
+
+@router.post("/periods", response_model=PayrollPeriodResponse, status_code=status.HTTP_201_CREATED)
+def create_payroll_period(
+    payload: PayrollPeriodCreate,
+    request: Request,
+    membership=Depends(require_company_permission("payroll.write")),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    _validate_period_items([item.model_dump(mode="json") for item in payload.items], membership.company_id, db)
+    period = PayrollPeriod(
+        company_id=membership.company_id,
+        month=payload.month,
+        status=payload.status,
+        items=[item.model_dump(mode="json") for item in payload.items],
+        approved_at=payload.approved_at,
+    )
+    db.add(period)
+    try:
+        db.flush()
+        db.add(AuditLog(
+            company_id=membership.company_id, actor_user_id=user.id,
+            action="payroll.period.created", resource_type="payroll_period",
+            resource_id=str(period.id), details={"month": period.month},
+            ip_address=request.client.host if request.client else None,
+        ))
+        db.commit()
+        db.refresh(period)
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Já existe uma folha para esta competência.") from None
+    return period
+
+
+@router.patch("/periods/{period_id}", response_model=PayrollPeriodResponse)
+def update_payroll_period(
+    period_id: UUID,
+    payload: PayrollPeriodUpdate,
+    request: Request,
+    membership=Depends(require_company_permission("payroll.write")),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    period = db.scalar(select(PayrollPeriod).where(
+        PayrollPeriod.id == period_id,
+        PayrollPeriod.company_id == membership.company_id,
+    ))
+    if period is None:
+        raise HTTPException(status_code=404, detail="Competência não encontrada.")
+    values = payload.model_dump(exclude_unset=True)
+    if "items" in values and values["items"] is not None:
+        serialized = [item.model_dump(mode="json") for item in payload.items or []]
+        _validate_period_items(serialized, membership.company_id, db)
+        values["items"] = serialized
+    for field, value in values.items():
+        setattr(period, field, value)
+    db.add(AuditLog(
+        company_id=membership.company_id, actor_user_id=user.id,
+        action="payroll.period.updated", resource_type="payroll_period",
+        resource_id=str(period.id), details={"fields": sorted(values)},
+        ip_address=request.client.host if request.client else None,
+    ))
+    db.commit()
+    db.refresh(period)
+    return period
+
+
+@router.get("/payments", response_model=list[PayrollPaymentResponse])
+def list_payroll_payments(
+    month: str | None = None,
+    membership=Depends(require_company_permission("payroll.read")),
+    db: Session = Depends(get_db),
+):
+    statement = select(PayrollPayment).where(PayrollPayment.company_id == membership.company_id)
+    if month is not None:
+        if len(month) != 7 or month[4:5] != "-" or not month[:4].isdigit() or not month[5:].isdigit() or not 1 <= int(month[5:]) <= 12:
+            raise HTTPException(status_code=422, detail="Competência deve estar no formato AAAA-MM.")
+        statement = statement.where(PayrollPayment.month == month)
+    return list(db.scalars(statement.order_by(PayrollPayment.due_date.desc())).all())
+
+
+@router.post("/payments", response_model=PayrollPaymentResponse, status_code=status.HTTP_201_CREATED)
+def create_payroll_payment(
+    payload: PayrollPaymentCreate,
+    request: Request,
+    membership=Depends(require_company_permission("payroll.write")),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    employee = db.scalar(select(PayrollEmployee).where(
+        PayrollEmployee.id == payload.employee_id,
+        PayrollEmployee.company_id == membership.company_id,
+    ))
+    if employee is None:
+        raise HTTPException(status_code=422, detail="Funcionário não encontrado nesta transportadora.")
+    payment = PayrollPayment(company_id=membership.company_id, **payload.model_dump())
+    db.add(payment)
+    db.flush()
+    db.add(AuditLog(
+        company_id=membership.company_id, actor_user_id=user.id,
+        action="payroll.payment.created", resource_type="payroll_payment",
+        resource_id=str(payment.id), details={"month": payment.month, "amount": str(payment.amount)},
+        ip_address=request.client.host if request.client else None,
+    ))
+    db.commit()
+    db.refresh(payment)
+    return payment
+
+
+@router.patch("/payments/{payment_id}", response_model=PayrollPaymentResponse)
+def update_payroll_payment(
+    payment_id: UUID,
+    payload: PayrollPaymentUpdate,
+    request: Request,
+    membership=Depends(require_company_permission("payroll.write")),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    payment = db.scalar(select(PayrollPayment).where(
+        PayrollPayment.id == payment_id,
+        PayrollPayment.company_id == membership.company_id,
+    ))
+    if payment is None:
+        raise HTTPException(status_code=404, detail="Pagamento não encontrado.")
+    values = payload.model_dump(exclude_unset=True)
+    if values.get("status") == "pago" and values.get("paid_at") is None and payment.paid_at is None:
+        raise HTTPException(status_code=422, detail="Informe a data efetiva do pagamento.")
+    for field, value in values.items():
+        setattr(payment, field, value)
+    if payment.status == "pago" and payment.paid_at is None:
+        raise HTTPException(status_code=422, detail="Informe a data efetiva do pagamento.")
+    db.add(AuditLog(
+        company_id=membership.company_id, actor_user_id=user.id,
+        action="payroll.payment.updated", resource_type="payroll_payment",
+        resource_id=str(payment.id), details={"fields": sorted(values)},
+        ip_address=request.client.host if request.client else None,
+    ))
+    db.commit()
+    db.refresh(payment)
+    return payment
