@@ -771,22 +771,53 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function showRevenuePage() {
-        if (!content || !window.PRIMERevenue) {
-            showToast("O módulo Receitas não foi carregado. Atualize a página e tente novamente.");
+        if (!content) {
+            console.error("[PRIME Receitas] Não foi encontrado o contêiner .content.");
+            showToast("Não foi possível abrir Receitas: área principal não encontrada.");
             return;
         }
+
         if (!revenuePage) {
             revenuePage = document.createElement("section");
             revenuePage.id = "revenuePage";
             revenuePage.hidden = true;
+            revenuePage.setAttribute("aria-live", "polite");
             content.appendChild(revenuePage);
         }
+
         originalContent.forEach((element) => { element.hidden = true; });
         if (expensesPage) expensesPage.hidden = true;
         revenuePage.hidden = false;
+
         if ($("#currentPage")) $("#currentPage").textContent = "Receitas";
-        window.PRIMERevenue.render(revenuePage);
         window.scrollTo({ top: 0, behavior: "smooth" });
+
+        if (!window.PRIMERevenue || typeof window.PRIMERevenue.render !== "function") {
+            console.error("[PRIME Receitas] revenue.js não disponibilizou PRIMERevenue.render.");
+            revenuePage.innerHTML = `
+                <div class="expenses-page-header">
+                    <div class="eyebrow">GESTÃO FINANCEIRA / FATURAMENTO</div>
+                    <h1>Receitas<span class="blue-period">.</span></h1>
+                    <p>O módulo de receitas foi solicitado, mas o arquivo revenue.js não foi inicializado.</p>
+                    <p style="margin-top:12px;color:#FCA5A5">Atualize a página com ⌘ + Shift + R. Se o problema continuar, verifique o carregamento de revenue.js.</p>
+                </div>`;
+            showToast("A tela Receitas abriu, mas o módulo não foi inicializado.");
+            return;
+        }
+
+        try {
+            window.PRIMERevenue.render(revenuePage);
+        } catch (error) {
+            console.error("[PRIME Receitas] Erro ao renderizar a tela:", error);
+            revenuePage.innerHTML = `
+                <div class="expenses-page-header">
+                    <div class="eyebrow">GESTÃO FINANCEIRA / FATURAMENTO</div>
+                    <h1>Receitas<span class="blue-period">.</span></h1>
+                    <p>Ocorreu um erro ao montar a tela de receitas.</p>
+                    <p style="margin-top:12px;color:#FCA5A5">${String(error && error.message ? error.message : error)}</p>
+                </div>`;
+            showToast("Receitas abriu com um erro. A mensagem está visível na tela.");
+        }
     }
 
     // --------------------------------------------------
